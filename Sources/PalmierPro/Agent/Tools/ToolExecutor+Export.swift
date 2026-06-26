@@ -134,7 +134,7 @@ extension ToolExecutor {
             outputURL: outputURL,
             acquireSlot: false
         ) else {
-            throw ToolError("export_project: \(service.error ?? "Palmier project export failed")")
+            throw ToolError("export_project: \(service.error ?? "Kawenreel project export failed")")
         }
 
         let missing = report.missing.map { ["id": $0.id, "name": $0.name] }
@@ -284,7 +284,7 @@ private enum ExportProjectMode: String {
         switch self {
         case .video: format?.displayName ?? "Video"
         case .xml: "XML"
-        case .palmier: "Palmier Project"
+        case .palmier: "Kawenreel Project"
         }
     }
 }

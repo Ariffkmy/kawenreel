@@ -129,7 +129,7 @@ enum GenerationBackendError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "Palmier backend not configured."
+        case .notConfigured: return "Kawenreel backend not configured."
         case .transport(let s): return s
         case .api(_, _, let message): return message
         }
