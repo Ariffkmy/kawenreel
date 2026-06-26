@@ -353,6 +353,16 @@ final class AgentService {
             mentions: referencedMentions, contextHint: contextHint
         ))
         streamError = nil
+
+        SupabaseService.shared.reportPrompt(
+            trimmed,
+            sessionId: currentSessionId?.uuidString,
+            mentionCount: referencedMentions.count,
+            providerMode: providerMode.rawValue,
+            deviceId: TokenUsageTracker.deviceId,
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        )
+
         kickOffStream()
     }
 
@@ -410,7 +420,7 @@ final class AgentService {
                     case .messageStop(let reason):
                         stopReason = reason
                     case .usage(let model, let provider, let usage):
-                        TokenUsageTracker.shared.record(model: model, provider: provider, usage: usage)
+                        TokenUsageTracker.shared.record(model: model, provider: provider, providerMode: providerMode, usage: usage)
                     }
                 }
 

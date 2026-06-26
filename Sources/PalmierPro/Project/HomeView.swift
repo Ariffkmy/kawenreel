@@ -12,7 +12,7 @@ struct HomeView: View {
         )
     ]
 
-    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @AppStorage("hasSeenBetaWelcome") private var hasSeenBetaWelcome = false
     @Bindable private var changelog = ChangelogStore.shared
 
     var body: some View {
@@ -30,8 +30,8 @@ struct HomeView: View {
         .task { await VisualModelLoader.shared.prepare() }
         .onAppear { changelog.checkForWhatsNew() }
         .overlay {
-            if !hasSeenWelcome {
-                WelcomeOverlay { withAnimation { hasSeenWelcome = true } }
+            if !hasSeenBetaWelcome {
+                BetaWelcomeOverlay { withAnimation { hasSeenBetaWelcome = true } }
             } else if let entry = changelog.pending {
                 UpdateOverlay(entry: entry, changelogURL: changelog.changelogURL) {
                     withAnimation { changelog.dismiss() }

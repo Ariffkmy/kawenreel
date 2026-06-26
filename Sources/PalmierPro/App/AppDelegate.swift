@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Sparkle updater
         _ = Updater.shared
 
-        HomeWindowController.shared.showWindow(nil)
+        // Gate the app behind Supabase sign-in; routes to Home once authenticated.
+        AuthCoordinator.start()
         Task.detached(priority: .utility) {
             Project.ensureStorageDirectory()
         }
@@ -25,9 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            AppState.shared.showHome()
+            if SupabaseService.shared.isSignedIn {
+                AppState.shared.showHome()
+            } else {
+                SignInWindowController.shared.showWindow(nil)
+            }
         }
         return true
+    }
+
+    @MainActor
+    @objc func signOut(_ sender: Any?) {
+        Task { await SupabaseService.shared.signOut() }
     }
 
     @MainActor

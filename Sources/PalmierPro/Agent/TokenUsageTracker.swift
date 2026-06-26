@@ -8,6 +8,7 @@ struct TokenUsageRecord: Codable, Sendable, Identifiable {
     var date = Date()
     let provider: String
     let model: String
+    var providerMode: String?
     let inputTokens: Int
     let outputTokens: Int
     let cacheReadTokens: Int
@@ -29,21 +30,33 @@ final class TokenUsageTracker {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("PalmierPro/token-usage.json", isDirectory: false)
 
+    /// Stable per-install id, used to attribute usage to a device in the dashboard.
+    static let deviceId: String = {
+        let key = "kawenreelDeviceId"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let id = UUID().uuidString
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }()
+
+    private static let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+
     init() { load() }
 
-    func record(model: String, provider: AgentProvider, usage: AgentTokenUsage) {
-        Log.agent.notice("token usage record model=\(model) provider=\(provider.rawValue) in=\(usage.inputTokens) out=\(usage.outputTokens) cacheR=\(usage.cacheReadTokens) cacheW=\(usage.cacheWriteTokens)")
+    func record(model: String, provider: AgentProvider, providerMode: AgentProviderMode, usage: AgentTokenUsage) {
         guard !usage.isEmpty else { return }
-        records.append(TokenUsageRecord(
+        let record = TokenUsageRecord(
             provider: provider.rawValue,
             model: model,
+            providerMode: providerMode.rawValue,
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
             cacheReadTokens: usage.cacheReadTokens,
             cacheWriteTokens: usage.cacheWriteTokens
-        ))
+        )
+        records.append(record)
         save()
-        Log.agent.notice("token usage saved records=\(records.count) path=\(Self.storeURL.path)")
+        SupabaseService.shared.reportUsage(record, deviceId: Self.deviceId, appVersion: Self.appVersion)
     }
 
     // MARK: Aggregates
