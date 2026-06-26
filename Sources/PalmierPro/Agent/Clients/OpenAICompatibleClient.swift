@@ -46,6 +46,26 @@ struct OpenAICompatibleConfig: Sendable {
     static let openRouterBaseURL = URL(string: "https://openrouter.ai/api/v1")!
     static let modelDefaultsKey = "agentOpenRouterModel"
 
+    struct ModelOption: Identifiable, Hashable, Sendable {
+        let id: String
+        let displayName: String
+    }
+
+    /// Curated suggestions for the in-chat picker. Any other slug works via "Custom Model…".
+    static let curatedModels: [ModelOption] = [
+        ModelOption(id: "google/gemini-2.5-flash-lite", displayName: "Gemini 2.5 Flash Lite"),
+        ModelOption(id: "google/gemini-2.5-flash", displayName: "Gemini 2.5 Flash"),
+        ModelOption(id: "google/gemini-2.5-pro", displayName: "Gemini 2.5 Pro"),
+        ModelOption(id: "anthropic/claude-sonnet-4.5", displayName: "Claude Sonnet 4.5"),
+        ModelOption(id: "anthropic/claude-haiku-4.5", displayName: "Claude Haiku 4.5"),
+        ModelOption(id: "openai/gpt-4.1-mini", displayName: "GPT-4.1 mini"),
+        ModelOption(id: "openai/gpt-4o-mini", displayName: "GPT-4o mini"),
+    ]
+
+    static func displayName(forModel id: String) -> String {
+        curatedModels.first { $0.id == id }?.displayName ?? id
+    }
+
     /// Builds the active config from keychain + overrides, or nil when no key is set.
     static func resolved() -> OpenAICompatibleConfig? {
         guard let key = OpenRouterKeychain.load(), !key.isEmpty else { return nil }

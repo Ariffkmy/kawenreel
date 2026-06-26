@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct AgentPanelView: View {
@@ -137,30 +138,85 @@ struct AgentPanelView: View {
 
     @ViewBuilder
     private var modelPicker: some View {
-        if service.hasApiKey {
-            Menu {
-                ForEach(service.availableModels, id: \.self) { m in
-                    Button(m.displayName) { service.model = m }
-                }
-            } label: {
-                HStack(spacing: AppTheme.Spacing.xs) {
-                    Text(service.effectiveModel.displayName)
-                        .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
-                        .foregroundStyle(AppTheme.Text.secondaryColor)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: AppTheme.FontSize.micro, weight: .semibold))
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+        Group {
+            if service.usesOpenRouter {
+                openRouterModelPicker
+            } else if service.hasApiKey {
+                anthropicModelPicker
+            }
+        }
+    }
+
+    private var anthropicModelPicker: some View {
+        Menu {
+            ForEach(service.availableModels, id: \.self) { m in
+                Button(m.displayName) { service.model = m }
+            }
+        } label: {
+            pickerLabel(service.effectiveModel.displayName)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private var openRouterModelPicker: some View {
+        Menu {
+            ForEach(OpenAICompatibleConfig.curatedModels) { option in
+                Button {
+                    service.openRouterModel = option.id
+                } label: {
+                    if service.openRouterModel == option.id {
+                        Label(option.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(option.displayName)
+                    }
                 }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            Divider()
+            Button("Custom Model…") { promptCustomOpenRouterModel() }
+        } label: {
+            pickerLabel(service.openRouterModelDisplayName)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private func pickerLabel(_ title: String) -> some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            Text(title)
+                .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
+                .foregroundStyle(AppTheme.Text.secondaryColor)
+            Image(systemName: "chevron.down")
+                .font(.system(size: AppTheme.FontSize.micro, weight: .semibold))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+        }
+    }
+
+    private func promptCustomOpenRouterModel() {
+        let alert = NSAlert()
+        alert.messageText = "Custom OpenRouter Model"
+        alert.informativeText = "Enter a model slug, e.g. anthropic/claude-sonnet-4.5"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = service.openRouterModel
+        field.placeholderString = OpenAICompatibleConfig.defaultModel
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Set")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let slug = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !slug.isEmpty { service.openRouterModel = slug }
     }
 
     @ViewBuilder
     private var byokIndicator: some View {
-        if service.hasApiKey {
+        if service.usesOpenRouter {
+            Text("via OpenRouter")
+                .font(.system(size: AppTheme.FontSize.xs).italic())
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .help("Streaming through your OpenRouter API key (BYOK)")
+        } else if service.hasApiKey {
             Text("using API key")
                 .font(.system(size: AppTheme.FontSize.xs).italic())
                 .foregroundStyle(AppTheme.Text.tertiaryColor)

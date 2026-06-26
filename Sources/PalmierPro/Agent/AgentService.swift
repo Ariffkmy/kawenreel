@@ -54,6 +54,18 @@ final class AgentService {
     var hasApiKey: Bool { !apiKey.isEmpty }
     var hasOpenRouterKey: Bool { !openRouterKey.isEmpty }
 
+    /// OpenRouter takes precedence over Anthropic/Palmier when its key is set (see `selectClient`).
+    var usesOpenRouter: Bool { hasOpenRouterKey }
+
+    var openRouterModel: String = {
+        UserDefaults.standard.string(forKey: OpenAICompatibleConfig.modelDefaultsKey)
+            ?? OpenAICompatibleConfig.defaultModel
+    }() {
+        didSet { UserDefaults.standard.set(openRouterModel, forKey: OpenAICompatibleConfig.modelDefaultsKey) }
+    }
+
+    var openRouterModelDisplayName: String { OpenAICompatibleConfig.displayName(forModel: openRouterModel) }
+
     var canStream: Bool {
         if hasOpenRouterKey || hasApiKey { return true }
         let account = AccountService.shared
