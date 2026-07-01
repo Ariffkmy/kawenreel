@@ -2,28 +2,31 @@ import CryptoKit
 import Foundation
 
 /// Disk + memory cache for full-file transcripts, keyed by file identity so edits invalidate naturally.
-/// Only full transcripts are cached. Windowed requests are served by filtering a cached full transcript.
 actor TranscriptCache {
     static let shared = TranscriptCache()
 
     private var memory: [String: TranscriptionResult] = [:]
     private static let memoryMax = 4
 
-    func transcript(for url: URL, isVideo: Bool, range: ClosedRange<Double>?) async throws -> TranscriptionResult {
-        let key = Self.key(for: url)
-        if let key, let full = cached(key) {
-            return range.map { Self.filter(full, to: $0) } ?? full
-        }
-        if let range {
+    func transcript(for url: URL, isVideo: Bool, range: ClosedRange<Double>?, preferredLocale: Locale? = nil) async throws -> TranscriptionResult {
+        // When a locale is forced, bypass the cache — locale variants must not overwrite the auto-detected entry.
+        if let preferredLocale {
             return isVideo
-                ? try await Transcription.transcribeVideoAudio(videoURL: url, sourceRange: range)
-                : try await Transcription.transcribe(fileURL: url, sourceRange: range)
+                ? try await Transcription.transcribeVideoAudio(videoURL: url, preferredLocale: preferredLocale, sourceRange: range)
+                : try await Transcription.transcribe(fileURL: url, preferredLocale: preferredLocale, sourceRange: range)
         }
-        let full = isVideo
-            ? try await Transcription.transcribeVideoAudio(videoURL: url)
-            : try await Transcription.transcribe(fileURL: url)
-        if let key { store(full, key: key) }
-        return full
+        // Cache full transcripts only; windowed calls filter the cached result for consistency.
+        let key = Self.key(for: url)
+        let full: TranscriptionResult
+        if let key, let cached = cached(key) {
+            full = cached
+        } else {
+            full = isVideo
+                ? try await Transcription.transcribeVideoAudio(videoURL: url)
+                : try await Transcription.transcribe(fileURL: url)
+            if let key { store(full, key: key) }
+        }
+        return range.map { Self.filter(full, to: $0) } ?? full
     }
 
     static func filter(_ r: TranscriptionResult, to range: ClosedRange<Double>) -> TranscriptionResult {
@@ -59,7 +62,10 @@ actor TranscriptCache {
         memory[key] = result
     }
 
-    private static let directory = FileManager.default
+    /// Drop in-memory entries so a disk clear isn't shadowed by the memory cache.
+    func clearMemory() { memory.removeAll() }
+
+    static let directory = FileManager.default
         .urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("\(Log.subsystem)/Transcripts", isDirectory: true)
 

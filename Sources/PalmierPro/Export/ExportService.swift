@@ -4,11 +4,13 @@ import AppKit
 enum ExportError: LocalizedError {
     case unsupportedPreset
     case invalidFormat
+    case xmlEncodingFailed
 
     var errorDescription: String? {
         switch self {
         case .unsupportedPreset: "Export preset not supported on this system"
         case .invalidFormat: "Invalid export format"
+        case .xmlEncodingFailed: "Couldn't encode the timeline as XML"
         }
     }
 }
@@ -32,6 +34,8 @@ final class ExportService {
         resolver: MediaResolver,
         format: ExportFormat,
         resolution: ExportResolution,
+        fcpxmlVersion: FCPXMLVersion = .default,
+        missingMediaRefs: Set<String> = [],
         outputURL: URL,
         acquireSlot: Bool = true
     ) async {
@@ -41,15 +45,29 @@ final class ExportService {
         progress = 0
         defer { isExporting = false }
 
-        if format == .xml {
+        if format == .xml || format == .fcpxml {
+            let name = format.fileExtension
             Log.export.notice(
-                "export requested format=xml",
+                "export requested format=\(name)",
                 telemetry: "Export started",
-                data: ["format": "xml", "tracks": timeline.tracks.count, "clips": timeline.tracks.reduce(0) { $0 + $1.clips.count }]
+                data: ["format": name, "tracks": timeline.tracks.count, "clips": timeline.tracks.reduce(0) { $0 + $1.clips.count }]
             )
-            XMLExporter.export(timeline: timeline, resolver: resolver, outputURL: outputURL)
-            progress = 1.0
-            Log.export.notice("export ok format=xml", telemetry: "Export finished", data: ["format": "xml"])
+            do {
+                if format == .xml {
+                    try await XMLExporter.export(timeline: timeline, resolver: resolver, outputURL: outputURL)
+                } else {
+                    try FCPXMLExporter.export(timeline: timeline, resolver: resolver, version: fcpxmlVersion, outputURL: outputURL)
+                }
+                progress = 1.0
+                Log.export.notice("export ok format=\(name)", telemetry: "Export finished", data: ["format": name])
+            } catch {
+                self.error = Log.detail(error)
+                Log.export.error(
+                    "export failed format=\(name): \(Log.detail(error))",
+                    telemetry: "Export failed",
+                    data: ["format": name, "error": Log.detail(error)]
+                )
+            }
             return
         }
 
@@ -74,7 +92,8 @@ final class ExportService {
         do {
             let prepared = try await makeExportSession(
                 timeline: timeline, resolver: resolver,
-                format: format, resolution: resolution
+                format: format, resolution: resolution,
+                missingMediaRefs: missingMediaRefs
             )
             let session = prepared.session
             guard let fileType = format.utType else { throw ExportError.invalidFormat }
@@ -207,14 +226,17 @@ final class ExportService {
         timeline: Timeline,
         resolver: MediaResolver,
         format: ExportFormat,
-        resolution: ExportResolution
+        resolution: ExportResolution,
+        missingMediaRefs: Set<String>
     ) async throws -> (session: AVAssetExportSession, result: CompositionResult, renderSize: CGSize) {
         let timelineCanvas = CGSize(width: timeline.width, height: timeline.height)
         let renderSize = resolution.renderSize(for: timelineCanvas)
+        let mediaURLs = resolver.expectedURLMap()
 
         let result = try await CompositionBuilder.build(
             timeline: timeline,
-            resolveURL: { resolver.resolveURL(for: $0) },
+            resolveURL: { mediaURLs[$0] },
+            missingMediaRefs: missingMediaRefs,
             renderSize: renderSize
         )
 
@@ -223,19 +245,7 @@ final class ExportService {
             throw ExportError.unsupportedPreset
         }
         session.audioMix = result.audioMix
-
-        // Bake text clips into the export via AVVideoCompositionCoreAnimationTool
-        let (parent, videoLayer) = TextLayerController.buildForExport(
-            timeline: timeline,
-            fps: timeline.fps,
-            renderSize: renderSize
-        )
-        let mutableVC = result.videoComposition.mutableCopy() as! AVMutableVideoComposition
-        mutableVC.animationTool = AVVideoCompositionCoreAnimationTool(
-            postProcessingAsVideoLayer: videoLayer,
-            in: parent
-        )
-        session.videoComposition = mutableVC
+        session.videoComposition = result.videoComposition
         return (session, result, renderSize)
     }
 
@@ -261,8 +271,8 @@ final class ExportService {
             }
         case .prores:
             AVAssetExportPresetAppleProRes422LPCM
-        case .xml:
-            AVAssetExportPresetPassthrough // unreachable — XML returns early
+        case .xml, .fcpxml:
+            AVAssetExportPresetPassthrough // unreachable — timeline formats return early
         }
     }
 }

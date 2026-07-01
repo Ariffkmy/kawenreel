@@ -9,14 +9,16 @@ enum ToolName: String, CaseIterable, Sendable {
     case removeClips = "remove_clips"
     case removeTracks = "remove_tracks"
     case moveClips = "move_clips"
+    case applyLayout = "apply_layout"
     case setClipProperties = "set_clip_properties"
     case setKeyframes = "set_keyframes"
-    case splitClip = "split_clip"
+    case splitClips = "split_clips"
     case rippleDeleteRanges = "ripple_delete_ranges"
     case removeWords = "remove_words"
     case syncAudio = "sync_audio"
     case undo = "undo"
     case addTexts = "add_texts"
+    case updateText = "update_text"
     case addCaptions = "add_captions"
     case exportProject = "export_project"
     case generateVideo = "generate_video"
@@ -49,6 +51,11 @@ enum ToolName: String, CaseIterable, Sendable {
     case setProjectSettings = "set_project_settings"
     case importFont = "import_font"
     case sendFeedback = "send_feedback"
+    case setProjectSettings = "set_project_settings"
+    case readSkill = "read_skill"
+    case getProjects = "get_projects"
+    case openProject = "open_project"
+    case newProject = "new_project"
 }
 
 struct AgentTool: @unchecked Sendable {
@@ -71,7 +78,7 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .getMedia,
-            description: "Call before referencing any asset. Every mediaRef/reference ID in other tools comes from the IDs returned here. Also exposes generationStatus (generating | downloading | failed | none) for async-generated and -imported assets.",
+            description: "Call before referencing any asset. Every mediaRef/reference ID in other tools comes from the IDs returned here. Also exposes generationStatus (preparing | generating | downloading | failed | none) for async-generated and async-imported assets.",
             inputSchema: objectSchema()
         ),
         AgentTool(
@@ -86,6 +93,7 @@ enum ToolDefinitions {
                     "endSeconds": ["type": "number", "description": "Video/audio. Window end (default: asset duration)."],
                     "wordTimestamps": ["type": "boolean", "description": "Video/audio. Add word-level [text, start, end] tuples (capped at 10000 — most clips return all words at once; narrow with startSeconds/endSeconds only for very long media). Use for word-boundary edits like filler-word removal."],
                     "overview": ["type": "boolean", "description": "Video only. One storyboard grid of visually distinct, timestamped moments instead of frames — far more coverage per token; few tiles means static footage. maxFrames ignored."],
+                    "language": ["type": "string", "description": "Optional BCP-47 language tag of the spoken audio (e.g. 'es', 'fr', 'ja', 'zh-Hans'). Defaults to the system language. Specify when the spoken language differs from the system locale — on-device models are language-specific and will produce garbled output if the wrong language is used."],
                 ],
                 required: ["mediaRef"]
             )
@@ -113,6 +121,7 @@ enum ToolDefinitions {
                     "startFrame": ["type": "integer", "description": "Optional. Only return words ending after this project frame. Use with the returned nextStartFrame to page a long timeline."],
                     "endFrame": ["type": "integer", "description": "Optional. Only return words starting before this project frame."],
                     "clipId": ["type": "string", "description": "Scope the transcript to a single clip — returns only what that clip says, in project frames. Answers \"what's in clip X?\" without scanning the whole timeline."],
+                    "language": ["type": "string", "description": "Optional BCP-47 language tag of the spoken audio (e.g. 'es', 'fr', 'ja', 'zh-Hans'). Defaults to the system language. Specify when the spoken language differs from the system locale — on-device models are language-specific and will produce garbled output if the wrong language is used."],
                 ]
             )
         ),
@@ -154,11 +163,11 @@ enum ToolDefinitions {
                                 "mediaRef": ["type": "string", "description": "ID of the media asset from get_media"],
                                 "trackIndex": ["type": "integer", "description": "Optional. Track index (0-based). Omit on every entry to auto-create one shared track per asset zone (video/audio)."],
                                 "startFrame": ["type": "integer", "description": "Timeline frame position to place the clip (project frames)."],
-                                "durationFrames": ["type": "integer", "description": "Clip length on the timeline, in project frames."],
-                                "trimStartFrame": ["type": "integer", "description": "Optional. Frames skipped from the START of the source media before the clip begins — a SOURCE offset, NOT a timeline position, but measured in PROJECT frames (the timeline's fps, same units as startFrame/durationFrames — never the source's own fps). 0 (default) starts at the source's first frame. Set this to trim on placement instead of a follow-up set_clip_properties call; semantics are identical to set_clip_properties."],
-                                "trimEndFrame": ["type": "integer", "description": "Optional. Frames trimmed off the END of the source media, in PROJECT frames — same units as trimStartFrame. 0 (default) trims nothing off the end."],
+                                "durationFrames": ["type": "integer", "description": "Optional. Clip length on the timeline, in project frames. Omit to derive it from the source: the clip spans from trimStartFrame to the source end minus trimEndFrame. Mutually exclusive with trimEndFrame — both pin the clip's end."],
+                                "trimStartFrame": ["type": "integer", "description": "Optional. Frames trimmed off the START of the source media (the clip's in-point) — a SOURCE offset, NOT a timeline position, but measured in PROJECT frames (the timeline's fps, same units as startFrame/durationFrames — never the source's own fps). 0 (default) starts at the source's first frame."],
+                                "trimEndFrame": ["type": "integer", "description": "Optional. Frames trimmed off the END of the source media (the clip's out-point), in PROJECT frames — same units as trimStartFrame. Mutually exclusive with durationFrames. Omit both to run to the source end. Untrimmed source on each side stays as headroom, so the clip can later be extended to reveal it."],
                             ],
-                            "required": ["mediaRef", "startFrame", "durationFrames"],
+                            "required": ["mediaRef", "startFrame"],
                         ],
                     ],
                 ],
@@ -179,9 +188,9 @@ enum ToolDefinitions {
                             "type": "object",
                             "properties": [
                                 "mediaRef": ["type": "string", "description": "ID of the media asset from get_media."],
-                                "durationFrames": ["type": "integer", "description": "Optional. Timeline length in project frames. Omit to use the asset's full source duration."],
-                                "trimStartFrame": ["type": "integer", "description": "Optional. Frames skipped from the START of the source media — a SOURCE offset in PROJECT frames (same units as atFrame/durationFrames, never the source's own fps). 0 (default) starts at the source's first frame."],
-                                "trimEndFrame": ["type": "integer", "description": "Optional. Frames trimmed off the END of the source media, in PROJECT frames. 0 (default) trims nothing."],
+                                "durationFrames": ["type": "integer", "description": "Optional. Timeline length in project frames. Omit to derive it from the source: the clip spans from trimStartFrame to the source end minus trimEndFrame (the full source when neither trim is set). Mutually exclusive with trimEndFrame — both pin the clip's end."],
+                                "trimStartFrame": ["type": "integer", "description": "Optional. Frames trimmed off the START of the source media (the clip's in-point) — a SOURCE offset in PROJECT frames (same units as atFrame/durationFrames, never the source's own fps). 0 (default) starts at the source's first frame."],
+                                "trimEndFrame": ["type": "integer", "description": "Optional. Frames trimmed off the END of the source media (the clip's out-point), in PROJECT frames. Mutually exclusive with durationFrames. Omit both to run to the source end. Untrimmed source on each side stays as headroom, so the clip can later be extended to reveal it."],
                             ],
                             "required": ["mediaRef"],
                         ],
@@ -241,8 +250,52 @@ enum ToolDefinitions {
             )
         ),
         AgentTool(
+            name: .applyLayout,
+            description: "Arrange multiple clips into a common multi-video layout (split screen, picture-in-picture, grid) in one undoable action — the fast path for composing several videos in one frame. Use this instead of hand-setting transforms and screenshot-checking alignment with inspect_timeline.\n\nYou pick a named layout and assign a clip to each of its slots; the tool computes every transform and crop so each clip FILLS its region edge-to-edge WITHOUT stretching — the source is cropped to the slot's shape (cover), like a layout template the videos are dropped into. Pass fit='fit' to letterbox the whole source inside its slot instead (no crop, may leave bars) — use only when the full frame must stay visible (e.g. a screen recording).\n\nThe crop is centered by default. When that chops off something important (a face cropped at the forehead, a subject off to one side), bias which part survives: 'anchor' is a coarse shortcut ('top' keeps the top, etc.), while anchorX/anchorY (0–1) give continuous control for in-between framing — e.g. anchorY 0.35 moves the crop only slightly toward the top, not all the way. To nudge framing after the fact, call apply_layout again with adjusted anchorX/anchorY (clipIds mode re-crops in place).\n\nTwo modes (don't mix across slots):\n• Place new clips: give each slot a 'mediaRef' (from get_media) plus top-level startFrame (default 0) and durationFrames. Creates one stacked video track per slot at that time range; for PIP the inset is placed on top automatically. Video clips bring their linked audio.\n• Re-layout existing clips: give each slot 'clipIds' — one or more existing clips, all framed into that slot (handy when a track holds several sequential takes). Only transforms/crop change — timing and tracks are untouched (so existing track order decides stacking).\n\nEvery slot of the chosen layout must be filled. Layouts and their slot names:\n  • full — main\n  • side_by_side — left, right\n  • top_bottom — top, bottom\n  • pip_bottom_right / pip_bottom_left / pip_top_right / pip_top_left — main, inset\n  • grid_2x2 — top_left, top_right, bottom_left, bottom_right\n  • main_sidebar — main (70%), sidebar (30%)\n  • three_up — left, center, right",
+            inputSchema: objectSchema(
+                properties: [
+                    "layout": [
+                        "type": "string",
+                        "enum": VideoLayout.allCases.map(\.rawValue),
+                        "description": "Which layout template to apply.",
+                    ],
+                    "slots": [
+                        "type": "array",
+                        "description": "One entry per slot of the chosen layout. Each entry names a 'slot' and gives exactly one of 'mediaRef' (place a new clip) or 'clipIds' (re-layout existing clip(s) into that slot). Don't mix placement (mediaRef) with re-layout (clipIds) across slots.",
+                        "items": objectSchema(
+                            properties: [
+                                "slot": ["type": "string", "description": "Slot name for the chosen layout (e.g. 'left', 'inset', 'top_right')."],
+                                "mediaRef": ["type": "string", "description": "Asset ID from get_media to place into this slot. Use this OR clipIds."],
+                                "clipIds": [
+                                    "type": "array",
+                                    "items": ["type": "string"],
+                                    "description": "Existing clip(s) to frame into this slot — every listed clip gets this slot's transform/crop (pass one id for a single clip, or several when a track holds sequential takes). Use this OR mediaRef. Clips sharing a slot may sit on the same track; clips in DIFFERENT slots still must not overlap on one track.",
+                                ],
+                                "anchor": [
+                                    "type": "string",
+                                    "enum": ["center", "top", "bottom", "left", "right", "top_left", "top_right", "bottom_left", "bottom_right"],
+                                    "description": "Coarse shortcut for which part of the source to keep when cover-cropping (default center). For in-between framing use anchorX/anchorY instead — the named values are just shortcuts for them.",
+                                ],
+                                "anchorX": ["type": "number", "description": "Fine horizontal framing, 0–1: 0 keeps the left edge, 0.5 centers (default), 1 keeps the right. Only affects slots cropped horizontally. Overrides anchor's x."],
+                                "anchorY": ["type": "number", "description": "Fine vertical framing, 0–1: 0 keeps the top (e.g. a forehead), 0.5 centers (default), 1 keeps the bottom. Nudge by small amounts (e.g. 0.35) to move the crop gradually. Only affects slots cropped vertically. Overrides anchor's y."],
+                            ],
+                            required: ["slot"]
+                        ),
+                    ],
+                    "startFrame": ["type": "integer", "description": "Placement mode only (mediaRef slots). Project frame where the layout begins. Default 0."],
+                    "durationFrames": ["type": "integer", "description": "Placement mode only (mediaRef slots). Length of the placed clips in project frames. Required when placing new clips."],
+                    "fit": [
+                        "type": "string",
+                        "enum": [LayoutFit.fill.rawValue, LayoutFit.fit.rawValue],
+                        "description": "How each clip fills its slot. 'fill' (default) covers the slot and center-crops the source (no stretch). 'fit' letterboxes the whole source inside the slot.",
+                    ],
+                ],
+                required: ["layout", "slots"]
+            )
+        ),
+        AgentTool(
             name: .setClipProperties,
-            description: "Apply the same property values to one or more clips in a single undoable action. Pass any combination of durationFrames, trimStartFrame, trimEndFrame, speed, volume, opacity, transform, or — for text clips only — content, fontName, fontSize, color, alignment. All values are applied to every clip in clipIds; for per-clip differences, make separate calls. trimStartFrame/trimEndFrame are offsets from the source media, not the timeline. speed 1.0 is normal, <1.0 slows (clip gets longer on the timeline), >1.0 speeds up. volume and opacity are 0.0–1.0. transform uses 0–1 normalized canvas coords, partial merge (pass only centerY to reposition vertically); flipHorizontal/flipVertical mirror the clip across the corresponding axis (no effect on text clips). When a text clip's content or font changes without an explicit transform, the bounding box auto-refits. Text-only fields with any non-text clip in clipIds are rejected.\n\nFor moves and start-frame changes, use move_clips. For animated values (keyframes), use set_keyframes — setting volume or opacity here clears any existing keyframe track on that property.\n\nTiming changes (durationFrames, trimStartFrame, trimEndFrame, speed) on a linked clip carry over to its linked partner so audio/video stay in sync — same as the timeline UI. Per-clip fields (volume, opacity, transform, text*) don't propagate. trim and speed are skipped for text partners.",
+            description: "Apply the same generic clip property values to one or more clips in a single undoable action. Pass any combination of durationFrames, trimStartFrame, trimEndFrame, speed, volume, opacity, transform, or blendMode (video/image clips only). For text content, typography, captions, and text animation, use update_text.\n\nNOT for preview layout — split screen, picture-in-picture, grid, sidebar, and any multi-clip canvas arrangement belong to apply_layout, which sets transform and crop together. Do not use transform here (or set_keyframes position/scale/crop) to build those layouts.\n\nAll values apply to every clip in clipIds; for per-clip differences, make separate calls. trimStartFrame/trimEndFrame are offsets from the source media, not the timeline. speed 1.0 is normal, <1.0 slows (clip gets longer on the timeline), >1.0 speeds up. volume and opacity are 0.0–1.0. transform is for rare single-clip tweaks only — 0–1 normalized canvas coords, partial merge; flipHorizontal/flipVertical mirror across the axis.\n\nFor moves and start-frame changes, use move_clips. For animated values (keyframes), use set_keyframes — setting volume or opacity here clears any existing keyframe track on that property.\n\nTiming changes (durationFrames, trimStartFrame, trimEndFrame, speed) on a linked clip carry over to its linked partner so audio/video stay in sync — same as the timeline UI. Per-clip fields (volume, opacity, transform, blendMode) don't propagate. trim and speed are skipped for text partners.",
             inputSchema: objectSchema(
                 properties: [
                     "clipIds": [
@@ -258,7 +311,7 @@ enum ToolDefinitions {
                     "opacity": ["type": "number", "description": "Opacity 0.0-1.0. Clears any existing opacity keyframes."],
                     "transform": [
                         "type": "object",
-                        "description": "Partial transform. Any combination of centerX, centerY, width, height, flipHorizontal, flipVertical; omitted fields keep their current value.",
+                        "description": "Single-clip only — not for split screen, PIP, or grid (use apply_layout). Partial transform: centerX, centerY, width, height, flipHorizontal, flipVertical; omitted fields keep current value.",
                         "properties": [
                             "centerX": ["type": "number"],
                             "centerY": ["type": "number"],
@@ -268,11 +321,11 @@ enum ToolDefinitions {
                             "flipVertical": ["type": "boolean", "description": "Mirror across the horizontal axis."],
                         ],
                     ],
-                    "content": ["type": "string", "description": "Text clips only. New text content."],
-                    "fontName": ["type": "string", "description": "Text clips only. Font PostScript or family name."],
-                    "fontSize": ["type": "number", "description": "Text clips only. Font size in canvas points."],
-                    "color": ["type": "string", "description": "Text clips only. Hex '#RRGGBB' or '#RRGGBBAA'."],
-                    "alignment": ["type": "string", "enum": ["left", "center", "right"], "description": "Text clips only."],
+                    "blendMode": [
+                        "type": "string",
+                        "enum": BlendMode.allCases.map(\.rawValue),
+                        "description": "Video/image clips only. How the clip composites over the tracks below it (Premiere/Photoshop blend modes). 'normal' is the default (source-over) and clears any blend. Rejected on text/audio clips.",
+                    ],
                 ],
                 required: ["clipIds"]
             )
@@ -298,19 +351,34 @@ enum ToolDefinitions {
             )
         ),
         AgentTool(
-            name: .splitClip,
-            description: "Splits a clip into two at atFrame. The frame must be strictly between the clip's start and end — use get_timeline to confirm the range.",
+            name: .splitClips,
+            description: "Splits clips into two at one or more cut points, all in a single undoable action. A split only inserts a boundary — it never trims media or moves clips, so unlike ripple_delete_ranges nothing shifts and there's no gap to close.\n\nTwo modes — pass exactly one:\n• splits: an array of {clipId, atFrame} (project frames). Use when you know the clip IDs.\n• trackIndex + frames: cut one track at the given project frames; each frame is matched to whichever clip on that track contains it. Pairs naturally with get_transcript / get_timeline project frames.\n\nEvery frame must fall strictly between a clip's start and end. Multiple cuts on the SAME clip are allowed — pass all the frames at once and each is resolved against the current sub-clips. Duplicate cut points are ignored. Linked audio/video partners are split at the same frame so A/V stays in sync, and the right halves are regrouped into their own link pair. One bad cut point rejects the whole call with no partial state.",
             inputSchema: objectSchema(
                 properties: [
-                    "clipId": ["type": "string", "description": "The clip ID to split"],
-                    "atFrame": ["type": "integer", "description": "Frame position to split at (must be between clip start and end)"],
+                    "splits": [
+                        "type": "array",
+                        "description": "Explicit cuts. Each item is {clipId, atFrame}.",
+                        "items": objectSchema(
+                            properties: [
+                                "clipId": ["type": "string", "description": "The clip ID to split"],
+                                "atFrame": ["type": "integer", "description": "Project frame to split at (strictly between clip start and end)"],
+                            ],
+                            required: ["clipId", "atFrame"]
+                        ),
+                    ],
+                    "trackIndex": ["type": "integer", "description": "Track to cut (use with 'frames')"],
+                    "frames": [
+                        "type": "array",
+                        "description": "Project frames to cut on trackIndex; each is matched to the clip containing it.",
+                        "items": ["type": "integer"],
+                    ],
                 ],
-                required: ["clipId", "atFrame"]
+                required: []
             )
         ),
         AgentTool(
             name: .rippleDeleteRanges,
-            description: "Cuts one or more ranges out and closes the gaps in one undoable action — the fast path for filler-word/dead-air removal. Replaces hand-cranked split_clip → split_clip → remove_clips → move_clips loops: pass every range at once.\n\nTwo modes — pass exactly one of clipId or trackIndex:\n• trackIndex (preferred for transcript-driven cuts): ranges are PROJECT frames and may span any number of clips on that track. get_transcript returns a clips array with nested words in project frames — collect every cut across the whole timeline and pass them in ONE call, no per-clip splitting and no re-reading the timeline between cuts. units must be 'frames'.\n• clipId: ranges are cut within that single clip only, clamped to its visible span. Allows units 'seconds' (source-media seconds, e.g. inspect_media WITHOUT a clipId or search_media hits); 'frames' = project frames. Use when you already have one clip's per-word timestamps.\n\nOverlapping ranges merge. Linked audio/video partners of every touched clip are cut on the same span so A/V stays in sync. Remaining clips shift left to close every gap; sync-locked tracks shift along to preserve alignment (their content isn't cut). Refuses without changing anything if a sync-locked track can't absorb the shift (e.g. it would move past frame 0). Returns the anchor track's post-cut layout (clip ids/frames) so you don't need to re-read.",
+            description: "Cuts one or more ranges out and closes the gaps in one undoable action — the fast path for filler-word/dead-air removal. Replaces hand-cranked split_clips → remove_clips → move_clips loops: pass every range at once.\n\nTwo modes — pass exactly one of clipId or trackIndex:\n• trackIndex (preferred for transcript-driven cuts): ranges are PROJECT frames and may span any number of clips on that track. get_transcript returns a clips array with nested words in project frames — collect every cut across the whole timeline and pass them in ONE call, no per-clip splitting and no re-reading the timeline between cuts. units must be 'frames'.\n• clipId: ranges are cut within that single clip only, clamped to its visible span. Allows units 'seconds' (source-media seconds, e.g. inspect_media WITHOUT a clipId or search_media hits); 'frames' = project frames. Use when you already have one clip's per-word timestamps.\n\nOverlapping ranges merge. Linked audio/video partners of every touched clip are cut on the same span so A/V stays in sync. Remaining clips shift left to close every gap; sync-locked tracks shift along to preserve alignment (their content isn't cut). Refuses without changing anything if a sync-locked track can't absorb the shift (e.g. it would move past frame 0). The refusal names the blocking track (e.g. \"V2\") — map it to its index via get_timeline and pass that index in ignoreSyncLockedTracks to cut anyway, leaving that track's clips in place. Returns the anchor track's post-cut layout (clip ids/frames) so you don't need to re-read.",
             inputSchema: objectSchema(
                 properties: [
                     "trackIndex": ["type": "integer", "description": "Cut project-frame ranges spanning every clip they cross on this track, in one call. From get_transcript's clips array. Mutually exclusive with clipId; requires units 'frames'."],
@@ -321,6 +389,11 @@ enum ToolDefinitions {
                         "items": ["type": "array", "items": ["type": "number"], "minItems": 2, "maxItems": 2],
                     ],
                     "units": ["type": "string", "enum": ["seconds", "frames"], "description": "Interpretation of range values. 'frames' (default) = project/timeline frames, matching get_transcript and inspect_media-with-clipId. 'seconds' = source-media seconds (clipId mode only)."],
+                    "ignoreSyncLockedTracks": [
+                        "type": "array",
+                        "items": ["type": "integer"],
+                        "description": "Track indices to exempt from sync-lock for this call only. Their clips stay put instead of shifting to close the gap. Use to get past a refusal naming a sync-locked overlay track (e.g. a text track that can't absorb the shift) when the cut doesn't touch that track's content.",
+                    ],
                 ],
                 required: ["ranges"]
             )
@@ -340,6 +413,7 @@ enum ToolDefinitions {
                         "enum": ["tight", "balanced", "loose"],
                         "description": "How much silence to leave between the words on either side of a cut. 'tight' butts them close (snappy, can feel clipped), 'balanced' (default) keeps a natural beat, 'loose' leaves more breathing room. The removed words' own frames always go regardless.",
                     ],
+                    "language": ["type": "string", "description": "BCP-47 language tag of the spoken audio. Must match the language passed to the get_transcript call the indices came from — word indices are only valid against the same transcription, so a localed transcript requires the same tag here or the wrong words are cut."],
                 ],
                 required: ["words"]
             )
@@ -365,34 +439,28 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .addTexts,
-            description: "Adds one or more text clips (titles, captions, lower-thirds) in a single undoable action. Text renders as an overlay on top of visual media. Transform uses 0–1 normalized canvas coords: (0.5,0.5) is center, (0.5,0.1) top-center, (0.5,0.9) bottom-center. Omit transform to center + auto-fit. Pass only centerX/centerY to reposition with auto-fit size (common for lower-thirds). Pass all four fields to override the box entirely. Colors are hex '#RRGGBB' or '#RRGGBBAA'.\n\ntrackIndex is optional. Omit it on all entries and the tool auto-creates one new video track at the top and places all text clips there — the common case for captions. To target existing tracks, set trackIndex on every entry (audio tracks rejected). Mixing (some entries specify, others omit) is rejected — split into two calls.\n\nTracks work as layers: clips on the SAME track are sequential — if a new clip's range overlaps an existing (or earlier-batch) clip on that track, the existing clip is trimmed/split/removed to make room, matching the UI's drag-onto-track overwrite behavior. To show multiple text clips at the same time (stacked titles, simultaneous labels), put each on a DIFFERENT trackIndex so they layer instead of trimming each other.\n\nFor captioning spoken audio, prefer add_captions — it transcribes and places styled caption clips in one call. Use add_texts only for bespoke text (titles, lower-thirds) or captioning a custom range by hand. Unknown fields are rejected.",
+            description: "Adds text clips as timeline layers. Omit trackIndex on every entry to create one new top video track; otherwise set trackIndex on every entry. Transform is normalized text-box center/size; center-only auto-fits, all four fields override the box. Use add_captions for spoken audio captions. Unknown fields are rejected.",
             inputSchema: objectSchema(
                 properties: [
                     "entries": [
                         "type": "array",
-                        "description": "Text clips to add. Each entry is independent.",
+                        "description": "Text clips to add.",
                         "items": [
                             "type": "object",
-                            "properties": [
-                                "trackIndex": ["type": "integer", "description": "Optional. Track index (0-based) for an existing non-audio track. Omit on every entry to auto-create one new track for the batch."],
-                                "startFrame": ["type": "integer", "description": "Frame position to place the clip"],
-                                "durationFrames": ["type": "integer", "description": "Duration in frames (>= 1)"],
-                                "content": ["type": "string", "description": "Text to display. Supports \\n for line breaks."],
+                            "properties": mergedProperties([
+                                "trackIndex": ["type": "integer", "description": "Existing non-audio track. Omit on all entries to create a new top track."],
+                                "startFrame": ["type": "integer", "description": "Timeline start frame."],
+                                "durationFrames": ["type": "integer", "description": "Duration in frames."],
+                                "content": ["type": "string", "description": "Text. Supports \\n."],
                                 "transform": [
                                     "type": "object",
-                                    "description": "Optional position/size. Omit for center + auto-fit. Pass centerX+centerY only for a specific position with auto-fit size. Pass all four for full override.",
-                                    "properties": [
-                                        "centerX": ["type": "number", "description": "Horizontal center 0–1 (0=left edge, 1=right edge)"],
-                                        "centerY": ["type": "number", "description": "Vertical center 0–1 (0=top, 1=bottom)"],
-                                        "width": ["type": "number", "description": "Width 0–1 (optional; omit for auto-fit)"],
-                                        "height": ["type": "number", "description": "Height 0–1 (optional; omit for auto-fit)"],
-                                    ],
+                                    "description": "Text box. Omit for centered auto-fit; center only auto-fits size; all four override.",
+                                    "properties": textBoxTransformProperties(),
                                 ],
-                                "fontName": ["type": "string", "description": "Font PostScript or family name, e.g. 'Helvetica-Bold', 'Georgia-Bold'. Default 'Helvetica-Bold'. Falls back to bold system font if not found."],
-                                "fontSize": ["type": "number", "description": "Font size in canvas points (default 96). On a 1080p canvas ~50 is a caption, ~120 is a title."],
-                                "color": ["type": "string", "description": "Hex '#RRGGBB' or '#RRGGBBAA' (default '#FFFFFF')"],
-                                "alignment": ["type": "string", "enum": ["left", "center", "right"], "description": "Text alignment (default 'center')"],
-                            ],
+                            ], textStyleProperties(), [
+                                "animation": ["type": "string", "enum": TextAnimation.Preset.agentValues, "description": "Animation preset; off clears."],
+                                "highlightColor": ["type": "string", "description": "Active-word hex."],
+                            ]),
                             "required": ["startFrame", "durationFrames", "content"],
                         ],
                     ],
@@ -401,28 +469,53 @@ enum ToolDefinitions {
             )
         ),
         AgentTool(
-            name: .addCaptions,
-            description: "Auto-caption spoken audio: transcribes on-device and places styled caption clips on a new track — the same pipeline as the editor's Captions tab. This is the reliable path for 'caption this'; prefer it over hand-placing add_texts from a transcript. Omit clipIds to auto-pick the track with the most speech; pass clipIds to caption specific clips (e.g. only the interview).",
+            name: .updateText,
+            description: "Updates text clips or a captionGroupId. Use for content, typography, color, outline color, background color, animation, or text-box transform. Content/typography changes auto-fit the box unless transform is passed. Unknown fields are rejected.",
             inputSchema: objectSchema(
-                properties: [
-                    "clipIds": ["type": "array", "items": ["type": "string"], "description": "Optional. Audio/video clips to caption. Omit to auto-detect the primary spoken track."],
-                    "language": ["type": "string", "description": "Optional BCP-47 language of the speech (e.g. 'es', 'ja', 'en-GB'). Defaults to the system language — set this when the footage is in another language, or transcription will be garbage."],
-                    "fontName": ["type": "string", "description": "Optional font PostScript or family name (default 'Helvetica-Bold'). Falls back to bold system font if not found."],
-                    "fontSize": ["type": "number", "description": "Optional font size in canvas points (default 48)."],
-                    "color": ["type": "string", "description": "Optional hex '#RRGGBB' or '#RRGGBBAA' (default white)."],
-                    "centerX": ["type": "number", "description": "Optional horizontal center 0–1 (default 0.5)."],
-                    "centerY": ["type": "number", "description": "Optional vertical center 0–1 (default 0.9, near the bottom)."],
-                    "textCase": ["type": "string", "enum": ["auto", "upper", "lower"], "description": "Optional letter case (default auto)."],
-                    "censorProfanity": ["type": "boolean", "description": "Optional. Mask profanity (default false)."],
-                ]
+                properties: mergedProperties([
+                    "clipIds": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Text clip IDs. Optional if captionGroupId is given.",
+                    ],
+                    "captionGroupId": ["type": "string", "description": "Caption group id from get_timeline."],
+                    "content": ["type": "string", "description": "Replacement text. Supports \\n."],
+                    "transform": [
+                        "type": "object",
+                        "description": "Partial text-box transform; omitted fields keep current values.",
+                        "properties": textBoxTransformProperties(),
+                    ],
+                ], textStyleProperties(), [
+                    "animation": ["type": "string", "enum": TextAnimation.Preset.agentValues, "description": "Animation preset; off clears."],
+                    "highlightColor": ["type": "string", "description": "Active-word hex."],
+                ]),
+                required: []
+            )
+        ),
+        AgentTool(
+            name: .addCaptions,
+            description: "Transcribes spoken audio and creates styled caption text clips. By default — clipIds omitted — captions the timeline's main spoken audio; prefer this, it's the most consistent. Only pass clipIds to caption a specific clip or part. Per-word animations are timed from transcript.",
+            inputSchema: objectSchema(
+                properties: mergedProperties([
+                    "clipIds": ["type": "array", "items": ["type": "string"], "description": "Optional. Scope captioning to these audio/video clips. Omit (default) to caption the timeline's main spoken audio."],
+                    "language": ["type": "string", "description": "BCP-47 speech language."],
+                    "centerX": ["type": "number", "description": "0-1 horizontal center."],
+                    "centerY": ["type": "number", "description": "0-1 vertical center."],
+                    "textCase": ["type": "string", "enum": ["auto", "upper", "lower"], "description": "Letter case."],
+                    "censorProfanity": ["type": "boolean", "description": "Mask profanity."],
+                    "maxWords": ["type": "integer", "description": "Max words per caption."],
+                ], textStyleProperties(), [
+                    "animation": ["type": "string", "enum": TextAnimation.Preset.agentValues, "description": "Caption animation preset."],
+                    "highlightColor": ["type": "string", "description": "Active-word hex."],
+                ])
             )
         ),
         AgentTool(
             name: .exportProject,
-            description: "Exports from the current project using the same modes as the Export dialog. mode defaults to video. video renders H.264, H.265, or ProRes; xml writes timeline XML; palmier writes a self-contained .palmier project package. Omit outputPath to write a unique file to ~/Downloads. Existing direct outputPath files are overwritten by default to match the UI save flow; pass overwrite=false to refuse. video renders in the background and returns status=started with the destination path; the app posts a system notification on completion or failure, so do not expect a final result inline. xml and palmier finish before returning and report their result inline.",
+            description: "Exports from the current project using the same modes as the Export dialog. mode defaults to video. video renders H.264, H.265, or ProRes; xml writes XMEML timeline XML; fcpxml writes FCPXML; palmier writes a self-contained .palmier project package. For timeline interchange, pick the format by the target editor: Premiere Pro -> xml; DaVinci Resolve or Final Cut Pro -> fcpxml (fcpxml also carries text, transforms, crop, opacity, and keyframes that xml cannot). Omit outputPath to write a unique file to ~/Downloads. Existing direct outputPath files are overwritten by default to match the UI save flow; pass overwrite=false to refuse. video renders in the background and returns status=started with the destination path; the app posts a system notification on completion or failure, so do not expect a final result inline. xml, fcpxml, and palmier finish before returning and report their result inline.",
             inputSchema: objectSchema(
                 properties: [
-                    "mode": ["type": "string", "enum": ["video", "xml", "palmier"], "description": "Optional. Default video."],
+                    "mode": ["type": "string", "enum": ["video", "xml", "fcpxml", "palmier"], "description": "Optional. Default video. Use xml for Premiere Pro, fcpxml for DaVinci Resolve or Final Cut Pro."],
                     "codec": ["type": "string", "enum": ["H.264", "H.265", "ProRes"], "description": "Video mode only. Optional. Default H.264."],
                     "resolution": ["type": "string", "enum": ["720p", "1080p", "2K", "4K", "Match Timeline"], "description": "Video mode only. Optional. Default Match Timeline."],
                     "outputPath": ["type": "string", "description": "Optional. Absolute destination path. If omitted, a unique project-named file is written to ~/Downloads. If no extension is provided, the mode's extension is appended."],
@@ -505,7 +598,7 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .importMedia,
-            description: "Imports external media into the project's library — the bridge for assets coming from other MCP servers (stock libraries, music services, web search) or local files the user already has. The 'source' object must set exactly one of: url (HTTPS only — downloaded in the background, the dominant case; max 1 GB), path (absolute local file path — referenced in place; may also be a directory, which is imported recursively, mirroring its subfolder structure as media folders), or bytes (base64-encoded inline data — max ~15 MB of base64 ≈ 11 MB binary; use url/path for anything larger). For url, type is inferred from the URL path's file extension unless source.mimeType is set as an override (needed for signed URLs whose path has no usable extension). For bytes, source.mimeType is required.\n\nSupported types and extensions: video (mov, mp4, m4v), audio (mp3, wav, aac, m4a, aiff, aifc, flac), image (png, jpg, jpeg, tiff, heic). Anything else is rejected — the caller must transcode externally.\n\nReturns a placeholder asset id immediately; URL imports run in the background and the asset becomes usable in add_clips once ready (same async pattern as generate_*). Path and bytes imports finalize synchronously. Costs nothing.",
+            description: "Imports external media into the project's library — the bridge for assets coming from other MCP servers (stock libraries, music services, web search) or local files the user already has. The 'source' object must set exactly one of: url (HTTPS only — downloaded in the background, the dominant case; max 1 GB), path (absolute local file path — copied into the project in the background; may also be a directory, which is imported recursively, mirroring its subfolder structure as media folders), or bytes (base64-encoded inline data — max ~15 MB of base64 ≈ 11 MB binary; use url/path for anything larger). For url, type is inferred from the URL path's file extension unless source.mimeType is set as an override (needed for signed URLs whose path has no usable extension). For bytes, source.mimeType is required.\n\nSupported types and extensions: video (mov, mp4, m4v), audio (mp3, wav, aac, m4a, aiff, aifc, flac), image (png, jpg, jpeg, tiff, heic). Anything else is rejected — the caller must transcode externally.\n\nReturns a placeholder asset id immediately for URL and file-path imports; the asset becomes usable in add_clips once ready (same async pattern as generate_*). Directory and bytes imports finalize synchronously. Costs nothing.",
             inputSchema: objectSchema(
                 properties: [
                     "source": [
@@ -839,13 +932,15 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .setProjectSettings,
-            description: "Change project-level settings in one undoable action. All fields are optional — omit any you don't want to change. fps changes rescale all clip timings proportionally. width/height must be provided together. letterboxRatio adds cinematic black bars on top of every frame during preview and export: pass a ratio like 2.35 for 2.35:1 widescreen, or 0 to remove bars.",
+            description: "Change the project's frame rate, resolution, or aspect ratio. Pass any combination of fps, explicit width+height, aspectRatio, and quality. aspectRatio and explicit width/height are mutually exclusive; quality scales the current aspect ratio (or the selected preset when combined with aspectRatio). The timeline's existing clips are re-fitted automatically: auto-fit transforms recalculate for the new canvas size, and all frame positions/durations rescale when fps changes. Undoable.",
             inputSchema: objectSchema(
                 properties: [
-                    "fps": ["type": "integer", "description": "Timeline frame rate (e.g. 24, 30, 60)."],
-                    "width": ["type": "integer", "description": "Canvas width in pixels. Must be provided with height."],
-                    "height": ["type": "integer", "description": "Canvas height in pixels. Must be provided with width."],
-                    "letterboxRatio": ["type": "number", "description": "Cinematic bar ratio as a decimal (e.g. 2.35 for 2.35:1). Pass 0 to remove bars."],
+                    "fps": ["type": "integer", "description": "Frame rate in frames per second. Common values: 24, 25, 30, 48, 50, 60."],
+                    "width": ["type": "integer", "description": "Canvas width in pixels. Use with height for an exact resolution. Mutually exclusive with aspectRatio."],
+                    "height": ["type": "integer", "description": "Canvas height in pixels. Use with width for an exact resolution. Mutually exclusive with aspectRatio."],
+                    "aspectRatio": ["type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "2.4:1", "9:14"], "description": "Preset aspect ratio — sets both width and height from the preset, or combined with quality to pick a specific size. Mutually exclusive with width/height."],
+                    "quality": ["type": "string", "enum": ["720p", "1080p", "2K", "4K"], "description": "Resolution quality preset — scales the short edge to the target while preserving the current (or specified) aspect ratio."],
+
                 ]
             )
         ),
@@ -860,6 +955,7 @@ enum ToolDefinitions {
             )
         ),
         AgentTool(
+
             name: .sendFeedback,
             description: "Report an agent limitation or bug to the Kawenreel team so they can improve the product. Use when you can't do what the user asked because a capability or tool is missing or behaves wrong, the result is clearly off, or the user is plainly hitting a rough edge. This sends directly — there is no user confirmation step — so PARAPHRASE in your own words: never include verbatim user messages, prompts, file paths, media, transcript text, or any project content. App/OS version and your recent tool names are attached automatically. Use sparingly: at most once per distinct issue.",
             inputSchema: objectSchema(
@@ -897,6 +993,78 @@ enum ToolDefinitions {
                 return "• \(d.id) — \(d.displayName): \(params.isEmpty ? "no params" : params)"
             }
             .joined(separator: "\n")
+    }
+
+    /// In-app assistant only
+    static let readSkill = AgentTool(
+        name: .readSkill,
+        description: "Load the full instructions for one of the skills listed under # Skills in your system prompt. Call this before starting a task that matches a skill's description, then follow the returned procedure. Pass the id exactly as listed.",
+        inputSchema: objectSchema(
+            properties: [
+                "id": ["type": "string", "description": "The skill id, exactly as listed under # Skills."],
+            ],
+            required: ["id"]
+        )
+    )
+
+    /// MCP server only
+    static let getProjects = AgentTool(
+        name: .getProjects,
+        description: "List the user's known projects, most recently opened first: each entry's id, name, path, whether it's currently open, and whether it's the active project (the one editing tools act on). Also returns a top-level `active` (name, path) for the current project, which may not appear in the list. Call this to discover what's available before open_project, or to find out which project is active. Takes no arguments.",
+        inputSchema: objectSchema()
+    )
+
+    static let openProject = AgentTool(
+        name: .openProject,
+        description: "Open a project and make it the active one — every editing tool then acts on it. Identify it by `id` (from get_projects) or by `path` to a .palmier package. If it's already open, it's brought to front. Returns the now-active project and how many are open. The user sees the window change.",
+        inputSchema: objectSchema(
+            properties: [
+                "id": ["type": "string", "description": "Project id from get_projects. Provide this or path."],
+                "path": ["type": "string", "description": "Filesystem path to a .palmier package. Provide this or id."],
+            ]
+        )
+    )
+
+    static let newProject = AgentTool(
+        name: .newProject,
+        description: "Create a new empty project in the user's Palmier Pro folder and make it active. Fails if a project with that name already exists — pick another name. Returns the new project's name and path.",
+        inputSchema: objectSchema(
+            properties: [
+                "name": ["type": "string", "description": "Project name (without extension). Defaults to 'Untitled Project'."],
+            ]
+        )
+    )
+
+
+    static var mcpServer: [AgentTool] { all + [getProjects, openProject, newProject] }
+    static var inAppAgent: [AgentTool] { all + [readSkill] }
+
+    private static func textBoxTransformProperties() -> [String: [String: Any]] {
+        [
+            "centerX": ["type": "number", "description": "0-1 horizontal center."],
+            "centerY": ["type": "number", "description": "0-1 vertical center."],
+            "width": ["type": "number", "description": "0-1 width."],
+            "height": ["type": "number", "description": "0-1 height."],
+        ]
+    }
+
+    private static func textStyleProperties() -> [String: [String: Any]] {
+        [
+            "fontName": ["type": "string", "description": "Font name."],
+            "fontSize": ["type": "number", "description": "Canvas points."],
+            "isBold": ["type": "boolean", "description": "Bold."],
+            "isItalic": ["type": "boolean", "description": "Italic."],
+            "color": ["type": "string", "description": "Text color hex."],
+            "alignment": ["type": "string", "enum": ["left", "center", "right"], "description": "Text alignment."],
+            "borderColor": ["type": "string", "description": "Text outline hex; enables outline."],
+            "backgroundColor": ["type": "string", "description": "Text box fill hex; enables fill."],
+        ]
+    }
+
+    private static func mergedProperties(_ chunks: [String: [String: Any]]...) -> [String: [String: Any]] {
+        chunks.reduce(into: [:]) { merged, chunk in
+            merged.merge(chunk) { _, new in new }
+        }
     }
 
     private static func objectSchema(

@@ -12,7 +12,7 @@ struct HomeView: View {
         )
     ]
 
-    @AppStorage("hasSeenBetaWelcome") private var hasSeenBetaWelcome = false
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
     @Bindable private var changelog = ChangelogStore.shared
 
     var body: some View {
@@ -24,14 +24,19 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(AppTheme.Opacity.medium))
         }
-        .frame(minWidth: 760, minHeight: 480)
+        .frame(
+            minWidth: AppTheme.Window.homeMin.width,
+            maxWidth: .infinity,
+            minHeight: AppTheme.Window.homeMin.height,
+            maxHeight: .infinity
+        )
         .background(.ultraThinMaterial)
         .focusEffectDisabled()
         .task { await VisualModelLoader.shared.prepare() }
         .onAppear { changelog.checkForWhatsNew() }
         .overlay {
-            if !hasSeenBetaWelcome {
-                BetaWelcomeOverlay { withAnimation { hasSeenBetaWelcome = true } }
+            if !hasSeenWelcome {
+                WelcomeOverlay { withAnimation { hasSeenWelcome = true } }
             } else if let entry = changelog.pending {
                 UpdateOverlay(entry: entry, changelogURL: changelog.changelogURL) {
                     withAnimation { changelog.dismiss() }
@@ -51,6 +56,7 @@ struct HomeView: View {
                 .padding(.bottom, AppTheme.Spacing.sm)
             projectGrid
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var header: some View {
@@ -71,7 +77,7 @@ struct HomeView: View {
         return ScrollView {
             LazyVGrid(columns: columns, alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 if entries.isEmpty {
-                    NewProjectCard(action: { AppState.shared.createNewProject() })
+                    NewProjectCard(action: { AppState.shared.createProjectInteractively() })
                 } else {
                     ForEach(entries) { entry in
                         ProjectCard(
@@ -156,9 +162,9 @@ private struct WelcomeTitle: View {
 
     private var title: String {
         if let first = account.account?.user.firstName {
-            return "Welcome to Kawenreel, \(first)"
+            return "Welcome to Palmier Pro, \(first)"
         }
-        return "Welcome to Kawenreel"
+        return "Welcome to Palmier Pro"
     }
 }
 
@@ -174,15 +180,16 @@ private struct HomeSidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 if !account.isSignedIn && !account.isMisconfigured {
                     SidebarRowButton(
-                        label: "Sign in with Google",
+                        label: account.isSigningIn ? "Opening Google…" : "Sign in with Google",
                         systemImage: "person.crop.circle",
                         action: { Task { await account.signInWithGoogle() } }
                     )
+                    .disabled(account.isSigningIn)
                 }
                 SidebarRowButton(
                     label: "New Project",
                     systemImage: "plus",
-                    action: { AppState.shared.createNewProject() }
+                    action: { AppState.shared.createProjectInteractively() }
                 )
                 SidebarRowButton(
                     label: "Open Project",
@@ -190,8 +197,8 @@ private struct HomeSidebar: View {
                     action: { AppState.shared.openProjectFromPanel() }
                 )
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
+            .padding(.horizontal, AppTheme.Spacing.smMd)
+            .padding(.vertical, AppTheme.Spacing.md)
 
             Spacer(minLength: 0)
 
@@ -200,8 +207,8 @@ private struct HomeSidebar: View {
                 systemImage: "gearshape",
                 action: { SettingsWindowController.shared.show() }
             )
-            .padding(.horizontal, 8)
-            .padding(.bottom, 10)
+            .padding(.horizontal, AppTheme.Spacing.smMd)
+            .padding(.bottom, AppTheme.Spacing.md)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -215,11 +222,12 @@ final class HomeWindowController: NSWindowController {
 
     private init() {
         let hostingController = NSHostingController(rootView: HomeView().tint(AppTheme.Accent.primary))
+        hostingController.sizingOptions = .minSize
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(AppTheme.Window.homeDefault)
         window.minSize = AppTheme.Window.homeMin
-        window.title = "Kawenreel"
-        window.setFrameAutosaveName("PalmierProHome-v2")
+        window.title = "Palmier Pro"
+        window.setFrameAutosaveName("PalmierProHome-v3")
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
         window.isOpaque = false

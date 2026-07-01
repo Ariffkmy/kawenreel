@@ -11,8 +11,6 @@ enum PreviewSeekMode: String {
 final class VideoEngine {
     private(set) var player = AVPlayer()
 
-    let textController = TextLayerController()
-
     weak var previewView: PreviewNSView?
 
     weak var editor: EditorViewModel?
@@ -69,7 +67,6 @@ final class VideoEngine {
 
     func seek(to frame: Int, mode: PreviewSeekMode = .exact) {
         guard let editor else { return }
-        textController.tick(frame)
 
         let time = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(editor.timeline.fps))
         let tolerance: CMTime = mode == .interactiveScrub
@@ -113,10 +110,8 @@ final class VideoEngine {
 
         switch tab {
         case .timeline:
-            textController.textRoot.isHidden = false
             rebuild()
         case .mediaAsset(let id, _, let type):
-            textController.textRoot.isHidden = true
             guard let asset = editor.mediaAssets.first(where: { $0.id == id }) else { return }
             if type == .image {
                 replacePlayerItem(nil, reason: "imagePreview")
@@ -139,7 +134,8 @@ final class VideoEngine {
         guard let editor, editor.activePreviewTab == .timeline else { return }
         rebuildTask?.cancel()
 
-        let resolver = editor.mediaResolver
+        let mediaURLs = editor.mediaResolver.expectedURLMap()
+        let missingMediaRefs = editor.missingMediaRefs
         let assetSizes: [String: CGSize] = Dictionary(
             uniqueKeysWithValues: editor.mediaAssets.compactMap { asset in
                 guard let w = asset.sourceWidth, let h = asset.sourceHeight, w > 0, h > 0 else { return nil }
@@ -152,8 +148,9 @@ final class VideoEngine {
             do {
                 result = try await CompositionBuilder.build(
                     timeline: editor.timeline,
-                    resolveURL: { resolver.resolveURL(for: $0) },
+                    resolveURL: { mediaURLs[$0] },
                     resolveSourceSize: { assetSizes[$0] },
+                    missingMediaRefs: missingMediaRefs,
                     renderSize: CGSize(width: editor.timeline.width, height: editor.timeline.height)
                 )
             } catch {
@@ -178,7 +175,6 @@ final class VideoEngine {
             item.audioMix = result.audioMix
             item.videoComposition = result.videoComposition
             replacePlayerItem(item, reason: "rebuild")
-            syncTextLayers()
 
             seek(to: editor.currentFrame, mode: .exact)
             if editor.isPlaying { player.play() }
@@ -203,22 +199,6 @@ final class VideoEngine {
         )
         currentItem.audioMix = audioMix
         currentItem.videoComposition = videoComposition
-    }
-
-    // MARK: - Text Layers
-
-    func syncTextLayers() {
-        guard let editor, let previewView else { return }
-        guard editor.activePreviewTab == .timeline else {
-            textController.textRoot.isHidden = true
-            return
-        }
-
-        textController.textRoot.isHidden = false
-        let videoRect = previewView.playerLayer.videoRect
-        let resolvedRect = videoRect.isEmpty ? previewView.bounds : videoRect
-        textController.sync(timeline: editor.timeline, videoRect: resolvedRect)
-        textController.tick(editor.currentFrame)
     }
 
     // MARK: - Scopes
@@ -402,7 +382,6 @@ final class VideoEngine {
                 let clamped = duration > 0 ? min(frame, duration) : frame
                 if editor.activePreviewTab == .timeline {
                     editor.currentFrame = clamped
-                    self.textController.tick(clamped)
                 } else {
                     editor.sourcePlayheadFrame = clamped
                 }

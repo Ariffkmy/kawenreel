@@ -27,9 +27,16 @@ final class ToolExecutor {
         guard let tool = ToolName(rawValue: name) else {
             return .error("Unknown tool: \(name)")
         }
-        if tool == .openProject {
-            return await openProject(args)
+
+        // project tools act on AppState before editor is available
+        switch tool {
+        case .getProjects, .openProject, .newProject:
+            return await runProjectTool(tool, args)
+        default:
+            break
         }
+
+
         guard let editor else { return .error("Editor not available") }
         let before = editor.timeline
         let result: ToolResult
@@ -74,7 +81,7 @@ final class ToolExecutor {
             )
         }
         // Shorten on the post-run state so newly created ids in summaries are shortened too.
-        return shorteningIds(in: result, editor: editor)
+        return await shorteningIds(in: result, editor: editor)
     }
 
     private func run(_ tool: ToolName, _ editor: EditorViewModel, _ args: [String: Any]) async throws -> ToolResult {
@@ -94,14 +101,16 @@ final class ToolExecutor {
         case .removeClips:      return try removeClips(editor, args)
         case .removeTracks:     return try removeTracks(editor, args)
         case .moveClips:        return try moveClips(editor, args)
+        case .applyLayout:      return try applyLayout(editor, args)
         case .setClipProperties: return try setClipProperties(editor, args)
         case .setKeyframes:     return try setKeyframes(editor, args)
-        case .splitClip:        return try splitClip(editor, args)
+        case .splitClips:       return try splitClips(editor, args)
         case .rippleDeleteRanges: return try rippleDeleteRanges(editor, args)
         case .removeWords:   return try await removeWords(editor, args)
         case .syncAudio:     return try await syncAudio(editor, args)
         case .undo:          return try undo(editor)
         case .addTexts:      return try addTexts(editor, args)
+        case .updateText:    return try updateText(editor, args)
         case .addCaptions:   return try await addCaptions(editor, args)
         case .exportProject: return try await exportProject(editor, args)
         case .generateVideo: return try generate(editor, args, type: .video)
@@ -122,41 +131,23 @@ final class ToolExecutor {
         case .renameFolder:  return try renameFolder(editor, args)
         case .deleteMedia:   return try deleteMedia(editor, args)
         case .deleteFolder:  return try deleteFolder(editor, args)
-        case .openProject:        throw ToolError("open_project must be called before any project is loaded")
+        case .sendFeedback:  return try await sendFeedback(editor, args)
         case .setProjectSettings: return try setProjectSettings(editor, args)
-        case .importFont:         return try importFont(args)
-        case .sendFeedback:       return try await sendFeedback(editor, args)
+        case .readSkill:     return readSkill(args)
+        case .getProjects, .openProject, .newProject:
+            return await runProjectTool(tool, args        case .importFont:         return try importFont(args)
+        )
         }
     }
 
-    private func openProject(_ args: [String: Any]) async -> ToolResult {
-        guard let path = args.string("path") else {
-            return .error("open_project: missing required argument 'path'")
+    func readSkill(_ args: [String: Any]) -> ToolResult {
+        guard let id = args.string("id") else {
+            return .error("read_skill requires an 'id'.")
         }
-        guard let handler = openProjectHandler else {
-            return .error("open_project: project opening is not available in this context")
+        guard let body = SkillStore.shared.body(for: id) else {
+            return .error("Unknown skill: \(id)")
         }
-        let url = URL(fileURLWithPath: path)
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
-            return .error("open_project: not a valid project directory: \(path)")
-        }
-        do {
-            let editor = try await handler(path)
-            return .ok(Self.jsonString([
-                "opened": path,
-                "fps": editor.timeline.fps,
-                "resolution": [editor.timeline.width, editor.timeline.height],
-                "totalFrames": editor.timeline.totalFrames,
-                "mediaCount": editor.mediaAssets.count,
-                "trackCount": editor.timeline.tracks.count,
-                "clipCount": editor.timeline.tracks.reduce(0) { $0 + $1.clips.count }
-            ]) ?? "{}")
-        } catch let err as ToolError {
-            return .error(err.message)
-        } catch {
-            return .error("open_project: \(error.localizedDescription)")
-        }
+        return .ok(body)
     }
 
     /// Reverts the assistant's most recent timeline edit. Refuses to undo the user's own edits.
@@ -298,6 +289,16 @@ func parseAlignment(_ raw: String?, path: String) throws -> TextStyle.Alignment?
     return a
 }
 
+// Untrusted Double→Int: nil on NaN/Inf/overflow instead of trapping.
+func safeInt(_ d: Double) -> Int? { Int(exactly: d.rounded(.towardZero)) }
+
+// Clamp before converting so the Int(...) can't overflow.
+func clampInt(_ d: Double, min lo: Int, max hi: Int) -> Int {
+    if d.isNaN || d <= Double(lo) { return lo }
+    if d >= Double(hi) { return hi }
+    return Int(d.rounded())
+}
+
 extension Dictionary where Key == String, Value == Any {
     func string(_ key: String) -> String? {
         if let v = self[key] as? String, !v.isEmpty { return v }
@@ -305,7 +306,7 @@ extension Dictionary where Key == String, Value == Any {
     }
     func int(_ key: String) -> Int? {
         if let v = self[key] as? Int { return v }
-        if let v = self[key] as? Double { return Int(v) }
+        if let v = self[key] as? Double { return safeInt(v) }
         if let v = self[key] as? NSNumber { return v.intValue }
         if let v = self[key] as? String { return Int(v) }
         return nil
