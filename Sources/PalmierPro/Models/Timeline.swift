@@ -120,6 +120,7 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     var cropTrack: KeyframeTrack<Crop>?
     var volumeTrack: KeyframeTrack<Double>?
 
+    var isAdjustment: Bool { mediaType == .adjustment }
     var effects: [Effect]?
 
     /// How this clip composites over the tracks below it. nil = normal (source-over).

@@ -4,6 +4,7 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
     case image
     case text
     case lottie
+    case adjustment
 
     var sfSymbolName: String {
         switch self {
@@ -12,6 +13,7 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
         case .image: "photo"
         case .text: "textformat"
         case .lottie: "sparkles"
+        case .adjustment: "rectangle.3.group"
         }
     }
 
@@ -22,13 +24,14 @@ enum ClipType: String, Codable, Sendable, CaseIterable {
         case .image: "Image"
         case .text: "Text"
         case .lottie: "Lottie"
+        case .adjustment: "Adjustment"
         }
     }
 
     var trackLabelPrefix: String { String(trackLabel.prefix(1)) }
 
     var isVisual: Bool {
-        self == .video || self == .image || self == .text || self == .lottie
+        self == .video || self == .image || self == .text || self == .lottie || self == .adjustment
     }
 
     func isCompatible(with other: ClipType) -> Bool {

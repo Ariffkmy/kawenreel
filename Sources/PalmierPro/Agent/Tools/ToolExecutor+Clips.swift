@@ -7,13 +7,14 @@ fileprivate struct AddClipsInput: DecodableToolArgs {
     static let allowedKeys: Set<String> = ["entries"]
 
     struct Entry: DecodableToolArgs {
-        let mediaRef: String
+        let mediaRef: String?
         let trackIndex: Int?
         let startFrame: Int
         let durationFrames: Int?
+        let isAdjustment: Bool?
         let trimStartFrame: Int?
         let trimEndFrame: Int?
-        static let allowedKeys: Set<String> = ["mediaRef", "trackIndex", "startFrame", "durationFrames", "trimStartFrame", "trimEndFrame"]
+        static let allowedKeys: Set<String> = ["mediaRef", "trackIndex", "startFrame", "durationFrames", "isAdjustment", "trimStartFrame", "trimEndFrame"]
     }
 }
 
@@ -115,12 +116,13 @@ struct ParsedTransform: Decodable {
 }
 
 fileprivate struct AddClipSpec {
-    let asset: MediaAsset
+    let asset: MediaAsset?
     var trackId: String?
     let startFrame: Int
     let durationFrames: Int
     let trimStartFrame: Int?
     let trimEndFrame: Int?
+    let isAdjustment: Bool
 }
 
 fileprivate struct ParsedMove {
@@ -170,7 +172,6 @@ extension ToolExecutor {
     func addClips(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
         let input: AddClipsInput = try decodeToolArgs(args, path: "add_clips")
         guard !input.entries.isEmpty else { throw ToolError("Missing or empty 'entries' array") }
-        // Decodable doesn't reject unknown nested keys; check each raw entry.
         if let raws = args["entries"] as? [Any] {
             for (idx, raw) in raws.enumerated() {
                 if let d = raw as? [String: Any] {
@@ -179,51 +180,80 @@ extension ToolExecutor {
             }
         }
 
-        var prepared: [(entry: AddClipsInput.Entry, asset: MediaAsset, trackId: String?)] = []
+        var prepared: [(entry: AddClipsInput.Entry, asset: MediaAsset?, trackId: String?)] = []
         prepared.reserveCapacity(input.entries.count)
         for (idx, entry) in input.entries.enumerated() {
-            let asset = try asset(entry.mediaRef, editor: editor)
+            let isAdj = entry.isAdjustment ?? false
+            let asset: MediaAsset?
+            if isAdj {
+                asset = nil
+            } else {
+                guard let mediaRef = entry.mediaRef, !mediaRef.isEmpty else {
+                    throw ToolError("entries[\(idx)]: mediaRef is required unless isAdjustment=true")
+                }
+                asset = try self.asset(mediaRef, editor: editor)
+            }
             var trackId: String? = nil
             if let ti = entry.trackIndex {
                 guard editor.timeline.tracks.indices.contains(ti) else {
                     throw ToolError("entries[\(idx)]: track index \(ti) out of range (0..\(editor.timeline.tracks.count - 1))")
                 }
                 let targetType = editor.timeline.tracks[ti].type
-                guard asset.type.isCompatible(with: targetType) else {
-                    throw ToolError("entries[\(idx)]: asset type \(asset.type.rawValue) is not compatible with \(targetType.rawValue) track at index \(ti)")
+                if !isAdj {
+                    guard asset!.type.isCompatible(with: targetType) else {
+                        throw ToolError("entries[\(idx)]: asset type \(asset!.type.rawValue) is not compatible with \(targetType.rawValue) track at index \(ti)")
+                    }
                 }
                 trackId = editor.timeline.tracks[ti].id
             }
             guard entry.startFrame >= 0 else {
                 throw ToolError("entries[\(idx)]: startFrame must be >= 0 (got \(entry.startFrame))")
             }
+            if isAdj {
+                guard entry.durationFrames != nil, entry.durationFrames! >= 1 else {
+                    throw ToolError("entries[\(idx)]: durationFrames is required and must be >= 1 for adjustment layers")
+                }
+            }
             prepared.append((entry, asset, trackId))
         }
 
-        // All-or-none for trackIndex: a new track at index 0 would shift any explicit indices.
+        let anyAdjustment = prepared.contains { $0.entry.isAdjustment ?? false }
+        let isMixed = prepared.contains { $0.entry.isAdjustment ?? false } &&
+                       prepared.contains { !($0.entry.isAdjustment ?? false) }
+        guard !isMixed else {
+            throw ToolError("Cannot mix adjustment layer entries with regular media entries in one call. Split into two calls.")
+        }
+
         let omittedCount = prepared.filter { $0.trackId == nil }.count
         guard omittedCount == 0 || omittedCount == prepared.count else {
             throw ToolError("Mixed trackIndex: \(omittedCount) of \(prepared.count) entries omitted trackIndex. Either set it on every entry or omit it on every entry (to auto-create shared tracks).")
         }
 
-        let settingsNote = applySettingsIfNeededForAgent(editor, assets: prepared.map(\.asset))
+        let nonAdjAssets = prepared.compactMap { $0.asset }
+        let settingsNote = nonAdjAssets.isEmpty ? nil : applySettingsIfNeededForAgent(editor, assets: nonAdjAssets)
 
         var specs: [AddClipSpec] = []
         specs.reserveCapacity(prepared.count)
         for (idx, p) in prepared.enumerated() {
-            let place = try resolvePlacement(p.asset, fps: editor.timeline.fps,
-                                             durationFrames: p.entry.durationFrames,
-                                             trimStartFrame: p.entry.trimStartFrame,
-                                             trimEndFrame: p.entry.trimEndFrame, path: "entries[\(idx)]")
-            specs.append(.init(asset: p.asset, trackId: p.trackId, startFrame: p.entry.startFrame,
-                               durationFrames: place.duration, trimStartFrame: place.trimStart, trimEndFrame: place.trimEnd))
+            let isAdj = p.entry.isAdjustment ?? false
+            if isAdj {
+                specs.append(.init(asset: nil, trackId: p.trackId, startFrame: p.entry.startFrame,
+                                   durationFrames: p.entry.durationFrames!, trimStartFrame: nil, trimEndFrame: nil,
+                                   isAdjustment: true))
+            } else {
+                let place = try resolvePlacement(p.asset!, fps: editor.timeline.fps,
+                                                 durationFrames: p.entry.durationFrames,
+                                                 trimStartFrame: p.entry.trimStartFrame,
+                                                 trimEndFrame: p.entry.trimEndFrame, path: "entries[\(idx)]")
+                specs.append(.init(asset: p.asset, trackId: p.trackId, startFrame: p.entry.startFrame,
+                                   durationFrames: place.duration, trimStartFrame: place.trimStart, trimEndFrame: place.trimEnd,
+                                   isAdjustment: false))
+            }
         }
 
         let actionName = specs.count == 1 ? "Add Clip (Agent)" : "Add Clips (Agent)"
         let (createdTracks, summaries) = try withUndoGroup(editor, actionName: actionName) { () -> ([String], [String]) in
             var createdTracks: [String] = []
-            // IDs already attributed to the response so the post-batch side-effect
-            // sweep doesn't double-count them.
             var reportedTrackIds: Set<String> = []
             let reportTrack: (Int) -> Void = { idx in
                 let t = editor.timeline.tracks[idx]
@@ -231,8 +261,8 @@ extension ToolExecutor {
                 reportedTrackIds.insert(t.id)
             }
             if omittedCount == specs.count {
-                let needsVideo = specs.contains { $0.asset.type != .audio }
-                let needsAudio = specs.contains { $0.asset.type == .audio }
+                let needsVideo = specs.contains { !$0.isAdjustment && $0.asset?.type != .audio } || anyAdjustment
+                let needsAudio = specs.contains { !$0.isAdjustment && $0.asset?.type == .audio }
                 var videoTrackId: String? = nil
                 var audioTrackId: String? = nil
                 if needsVideo {
@@ -246,7 +276,8 @@ extension ToolExecutor {
                     reportTrack(idx)
                 }
                 for i in specs.indices {
-                    specs[i].trackId = (specs[i].asset.type == .audio) ? audioTrackId : videoTrackId
+                    specs[i].trackId = specs[i].isAdjustment ? videoTrackId
+                        : (specs[i].asset?.type == .audio ? audioTrackId : videoTrackId)
                 }
             }
 
@@ -256,9 +287,9 @@ extension ToolExecutor {
             let nonEmptyBefore = Set(editor.timeline.tracks.filter { !$0.clips.isEmpty }.map(\.id))
 
             let orderedIndices = specs.indices.sorted {
-                let aAudio = specs[$0].asset.type == .audio ? 0 : 1
-                let bAudio = specs[$1].asset.type == .audio ? 0 : 1
-                if aAudio != bAudio { return aAudio < bAudio }
+                let aAdj = specs[$0].isAdjustment ? 0 : 1
+                let bAdj = specs[$1].isAdjustment ? 0 : 1
+                if aAdj != bAdj { return aAdj < bAdj }
                 return (specs[$0].trackId!, specs[$0].startFrame) < (specs[$1].trackId!, specs[$1].startFrame)
             }
             for i in orderedIndices {
@@ -268,20 +299,31 @@ extension ToolExecutor {
                     throw ToolError("entries[\(i)]: destination track no longer exists")
                 }
                 editor.clearRegion(trackIndex: trackIdx, start: spec.startFrame, end: spec.startFrame + spec.durationFrames, prune: false)
-                let ids = editor.placeClip(
-                    asset: spec.asset, trackIndex: trackIdx,
-                    startFrame: spec.startFrame, durationFrames: spec.durationFrames,
-                    trimStartFrame: spec.trimStartFrame, trimEndFrame: spec.trimEndFrame
-                )
+
+                let ids: [String]
+                if spec.isAdjustment {
+                    let clip = Clip(mediaRef: "", mediaType: .adjustment, sourceClipType: .adjustment,
+                                    startFrame: spec.startFrame, durationFrames: spec.durationFrames)
+                    editor.timeline.tracks[trackIdx].clips.append(clip)
+                    editor.sortClips(trackIndex: trackIdx)
+                    ids = [clip.id]
+                } else {
+                    ids = editor.placeClip(
+                        asset: spec.asset!, trackIndex: trackIdx,
+                        startFrame: spec.startFrame, durationFrames: spec.durationFrames,
+                        trimStartFrame: spec.trimStartFrame, trimEndFrame: spec.trimEndFrame
+                    )
+                }
                 guard let primary = ids.first else {
                     throw ToolError("entries[\(i)]: failed to place clip on track \(trackIdx) at frame \(spec.startFrame)")
                 }
                 allAdded.append(contentsOf: ids)
                 let pairedNote = ids.count > 1 ? " (+linked audio \(ids[1]))" : ""
+                let adjNote = spec.isAdjustment ? " [adjustment layer]" : ""
                 var trimNote = ""
                 if let t = spec.trimStartFrame, t != 0 { trimNote += " trimStart \(t)" }
                 if let t = spec.trimEndFrame, t != 0 { trimNote += " trimEnd \(t)" }
-                summaries.append("\(primary) on track \(trackIdx) @ \(spec.startFrame) for \(spec.durationFrames)\(trimNote)\(pairedNote)")
+                summaries.append("\(primary) on track \(trackIdx) @ \(spec.startFrame) for \(spec.durationFrames)\(trimNote)\(pairedNote)\(adjNote)")
             }
 
             for track in editor.timeline.tracks where track.clips.isEmpty && nonEmptyBefore.contains(track.id) {

@@ -30,6 +30,10 @@ enum FrameRenderer {
             case .text:
                 image = composedTextLayer(layer, frame: frame, renderSize: instruction.renderSize,
                                           bakeOpacity: isNormal)
+            case .adjustment:
+                // Adjustment layers apply their effects onto the composited result so far.
+                accum = applyAdjustmentLayer(layer, accum: accum, frame: frame)
+                continue
             }
             guard let image else { continue }
             if isNormal {
@@ -74,6 +78,23 @@ enum FrameRenderer {
         f?.setValue(blended, forKey: "inputTargetImage")
         f?.setValue(opacity, forKey: "inputTime")
         return (f?.outputImage ?? blended).cropped(to: background.extent)
+    }
+
+    /// Apply adjustment layer effects to the composited image so far.
+    private static func applyAdjustmentLayer(
+        _ layer: LayerPlan,
+        accum: CIImage,
+        frame: Int
+    ) -> CIImage {
+        let clip = layer.clip
+        guard let effects = clip.effects, !effects.isEmpty else { return accum }
+        var image = accum.unpremultiplyingAlpha()
+        let offset = frame - clip.startFrame
+        for effect in effects where effect.enabled {
+            guard let descriptor = EffectRegistry.descriptor(id: effect.type) else { continue }
+            image = descriptor.render(image, effect: effect, atOffset: offset)
+        }
+        return image
     }
 
     /// Tag output Rec. 709 at the buffer level so downstream reads our bytes correctly.

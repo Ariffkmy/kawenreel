@@ -147,7 +147,7 @@ final class TimelineInputController {
                     originalTrimEnd: clip.trimEndFrame,
                     originalStartFrame: clip.startFrame,
                     originalDuration: clip.durationFrames,
-                    hasNoSourceMedia: clip.mediaType == .image || clip.mediaType == .text,
+                    hasNoSourceMedia: clip.mediaType == .image || clip.mediaType == .text || clip.mediaType == .adjustment,
                     propagateToLinked: linkedOn,
                     isRipple: rippleTrim
                 ))
@@ -159,7 +159,7 @@ final class TimelineInputController {
                     originalTrimEnd: clip.trimEndFrame,
                     originalStartFrame: clip.startFrame,
                     originalDuration: clip.durationFrames,
-                    hasNoSourceMedia: clip.mediaType == .image || clip.mediaType == .text,
+                    hasNoSourceMedia: clip.mediaType == .image || clip.mediaType == .text || clip.mediaType == .adjustment,
                     propagateToLinked: linkedOn,
                     isRipple: rippleTrim
                 ))

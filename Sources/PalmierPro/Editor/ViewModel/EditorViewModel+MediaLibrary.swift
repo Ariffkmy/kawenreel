@@ -344,6 +344,9 @@ extension EditorViewModel {
     }
 
     func clipDisplayLabel(for clip: Clip) -> String {
+        if clip.mediaType == .adjustment {
+            return "Adjustment Layer"
+        }
         if clip.mediaType == .text {
             let content = clip.textContent ?? ""
             if content.isEmpty { return "Text" }
@@ -573,7 +576,7 @@ extension EditorViewModel {
             mediaVisualCache.generateWaveform(for: asset)
         case .image:
             mediaVisualCache.generateImageThumbnail(for: asset)
-        case .text, .lottie:
+        case .text, .lottie, .adjustment:
             break
         }
         refreshPreviewForFinalizedAsset(asset)

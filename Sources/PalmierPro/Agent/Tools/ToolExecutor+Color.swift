@@ -59,8 +59,8 @@ extension ToolExecutor {
         guard input.hasAnyParam || (input.reset ?? false) else { throw ToolError("No grade parameters provided.") }
         for id in input.clipIds {
             guard let clip = editor.clipFor(id: id) else { throw ToolError("Clip not found: \(id)") }
-            guard clip.mediaType == .video || clip.mediaType == .image else {
-                throw ToolError("Clip \(id) is a \(clip.mediaType.rawValue) clip; apply_color needs a video or image clip.")
+            guard clip.mediaType == .video || clip.mediaType == .image || clip.mediaType == .adjustment else {
+                throw ToolError("Clip \(id) is a \(clip.mediaType.rawValue) clip; apply_color needs a video, image, or adjustment clip.")
             }
         }
         // LUT file I/O up front so it can throw before mutating.

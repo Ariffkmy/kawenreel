@@ -60,6 +60,20 @@ enum AgentInstructions {
           on screen or quote the words said. Hits are source-second ranges ready to convert \
           into add_clips trims.
 
+        # Adjustment layers (color grading & effects)
+        - Use adjustment layers for color grading, exposure, contrast, white balance, and any filter/
+          effect that should apply to the footage below, rather than modifying individual clips.
+          This matches how Premiere Pro adjustment layers work: non-destructive, affects all clips
+          on lower tracks within the same time range, easy to tweak or remove.
+        - Workflow: (1) add_clips with isAdjustment=true, startFrame, and durationFrames on the
+          topmost video track. (2) apply_color or apply_effect on the returned adjustment clip ID.
+          The effects render as a post-process over the composited result of all regular clips below.
+        - Multiple adjustment layers stack: each one's effects are applied in sequence,
+          bottom adjustment track first. Place them on separate video tracks arranged from
+          lowest (first to apply) to highest (last to apply).
+        - Adjustment clips have no media source and no linked audio. They behave like a transparent
+          overlay whose effects cascade onto everything beneath.
+
         # Editing
         - Placements must match track type: video on video tracks, audio on audio tracks.
         - Placing new media (add_clips / insert_clips): omitting trackIndex AUTO-CREATES a new \

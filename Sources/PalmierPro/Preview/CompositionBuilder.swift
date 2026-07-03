@@ -52,10 +52,10 @@ enum CompositionBuilder {
         var unprocessableMediaRefs: Set<String> = []
 
         for (trackIdx, track) in timeline.tracks.enumerated() {
-            // Text is composited at render, not as a track.
+            // Text and adjustment are composited at render, not as tracks.
             let sortedClips = track.clips
                 .sorted { $0.startFrame < $1.startFrame }
-                .filter { $0.mediaType != .text }
+                .filter { $0.mediaType != .text && $0.mediaType != .adjustment }
             guard !sortedClips.isEmpty else { continue }
             let isAudio = track.type == .audio
             let mediaType: AVMediaType = isAudio ? .audio : .video
@@ -443,7 +443,7 @@ enum CompositionBuilder {
         for mapping in trackMappings where mapping.isVideo {
             guard case .timeline(let trackIndex, let clipIds) = mapping.kind,
                   timeline.tracks.indices.contains(trackIndex) else { continue }
-            let ids = clipIds ?? Set(timeline.tracks[trackIndex].clips.filter { $0.mediaType != .text }.map(\.id))
+            let ids = clipIds ?? Set(timeline.tracks[trackIndex].clips.filter { $0.mediaType != .text && $0.mediaType != .adjustment }.map(\.id))
             for id in ids {
                 media[id] = Slot(
                     trackID: mapping.compositionTrack.trackID,
@@ -459,7 +459,9 @@ enum CompositionBuilder {
             var prevEndFrame = Int.min
             for clip in track.clips.sorted(by: { $0.startFrame < $1.startFrame }) where clip.durationFrames > 0 {
                 let plan: LayerPlan
-                if clip.mediaType == .text {
+                if clip.mediaType == .adjustment {
+                    plan = LayerPlan(source: .adjustment, clip: clip, natSize: renderSize, preferredTransform: .identity)
+                } else if clip.mediaType == .text {
                     guard !(clip.textContent ?? "").isEmpty else { continue }
                     plan = LayerPlan(source: .text, clip: clip, natSize: renderSize, preferredTransform: .identity)
                 } else {

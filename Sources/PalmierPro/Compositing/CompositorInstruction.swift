@@ -5,6 +5,7 @@ struct LayerPlan: Sendable {
     enum Source: Sendable {
         case track(CMPersistentTrackID)
         case text
+        case adjustment
     }
     let source: Source
     let clip: Clip

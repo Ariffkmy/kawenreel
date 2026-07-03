@@ -94,7 +94,10 @@ enum ClipRenderer {
 
         // --- Draw visual content ---
 
-        if type == .video, let thumbs = cache?.thumbnails(for: clip.mediaRef), !thumbs.isEmpty, mainHeight > 4 {
+        if type == .adjustment, mainHeight > 4 {
+            let bodyRect = CGRect(x: contentX, y: contentY, width: contentWidth, height: mainHeight)
+            drawAdjustmentPattern(in: bodyRect, context: context)
+        } else if type == .video, let thumbs = cache?.thumbnails(for: clip.mediaRef), !thumbs.isEmpty, mainHeight > 4 {
             let thumbRect = CGRect(x: contentX, y: contentY, width: contentWidth, height: mainHeight)
             drawThumbnailStrip(thumbnails: thumbs, clip: clip, in: thumbRect, clipRect: rect, cornerRadius: cornerRadius, fps: fps, context: context)
         } else if type == .image, let image = cache?.imageThumbnail(for: clip.mediaRef), mainHeight > 4 {
@@ -651,6 +654,31 @@ enum ClipRenderer {
         context.addPath(path)
         context.fillPath()
         str.draw(at: NSPoint(x: badgeRect.minX + padH, y: badgeRect.minY + padV))
+        context.restoreGState()
+    }
+
+    // MARK: - Adjustment layer pattern
+
+    private static func drawAdjustmentPattern(in rect: NSRect, context: CGContext) {
+        guard rect.width > 0, rect.height > 0 else { return }
+        context.saveGState()
+        let step: CGFloat = 8
+        let color = AppTheme.TrackColor.adjustment.withAlphaComponent(0.15)
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(1)
+        var x = rect.minX
+        while x < rect.maxX {
+            context.move(to: CGPoint(x: x, y: rect.minY))
+            context.addLine(to: CGPoint(x: x + step, y: rect.maxY))
+            x += step * 2
+        }
+        x = rect.minX + step
+        while x < rect.maxX {
+            context.move(to: CGPoint(x: x, y: rect.minY))
+            context.addLine(to: CGPoint(x: x - step, y: rect.maxY))
+            x += step * 2
+        }
+        context.strokePath()
         context.restoreGState()
     }
 

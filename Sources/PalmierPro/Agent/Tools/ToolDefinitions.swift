@@ -153,7 +153,7 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .addClips,
-            description: "Places one or more media assets on the timeline as a single undoable action. Each entry's asset type must be compatible with its target track (video/image are interchangeable across video/image tracks; audio requires an audio track). When a video asset with audio is placed on a video track, a linked audio clip is automatically created on an audio track (an existing one if available, otherwise a new one). The whole batch is one undo step.\n\ntrackIndex is optional. Omit it on all entries and the tool auto-creates the needed tracks — one shared video track for visual entries and one shared audio track for audio entries (matches the captioning pattern in add_texts). To target existing tracks, set trackIndex on every entry. Mixing (some entries specify, others omit) is rejected — split into two calls.\n\nTracks work as layers: clips on the SAME track are sequential — if a new clip's range overlaps an existing clip on that track, the existing clip is trimmed/split/removed to make room, matching the UI's drag-onto-track overwrite behavior.",
+            description: "Places one or more media assets on the timeline as a single undoable action. Each entry's asset type must be compatible with its target track (video/image are interchangeable across video/image tracks; audio requires an audio track). When a video asset with audio is placed on a video track, a linked audio clip is automatically created on an audio track (an existing one if available, otherwise a new one). The whole batch is one undo step.\n\ntrackIndex is optional. Omit it on all entries and the tool auto-creates the needed tracks — one shared video track for visual entries and one shared audio track for audio entries (matches the captioning pattern in add_texts). To target existing tracks, set trackIndex on every entry. Mixing (some entries specify, others omit) is rejected — split into two calls.\n\nTracks work as layers: clips on the SAME track are sequential — if a new clip's range overlaps an existing clip on that track, the existing clip is trimmed/split/removed to make room, matching the UI's drag-onto-track overwrite behavior.\n\nFor adjustment layers (color grading, effects that should apply to all clips below), set isAdjustment=true and omit mediaRef. The adjustment clip has no media source; apply_color or apply_effect target its clipId instead.",
             inputSchema: objectSchema(
                 properties: [
                     "entries": [
@@ -162,14 +162,15 @@ enum ToolDefinitions {
                         "items": [
                             "type": "object",
                             "properties": [
-                                "mediaRef": ["type": "string", "description": "ID of the media asset from get_media"],
+                                "mediaRef": ["type": "string", "description": "ID of the media asset from get_media. Omit (or pass empty) when isAdjustment=true."],
                                 "trackIndex": ["type": "integer", "description": "Optional. Track index (0-based). Omit on every entry to auto-create one shared track per asset zone (video/audio)."],
                                 "startFrame": ["type": "integer", "description": "Timeline frame position to place the clip (project frames)."],
-                                "durationFrames": ["type": "integer", "description": "Optional. Clip length on the timeline, in project frames. Omit to derive it from the source: the clip spans from trimStartFrame to the source end minus trimEndFrame. Mutually exclusive with trimEndFrame — both pin the clip's end."],
+                                "durationFrames": ["type": "integer", "description": "Optional. Clip length on the timeline, in project frames. Required for adjustment layers."],
+                                "isAdjustment": ["type": "boolean", "description": "Optional. When true, creates an adjustment layer — no media source, its effects apply to all clips below. Apply color/effect tools to this clip's ID."],
                                 "trimStartFrame": ["type": "integer", "description": "Optional. Frames trimmed off the START of the source media (the clip's in-point) — a SOURCE offset, NOT a timeline position, but measured in PROJECT frames (the timeline's fps, same units as startFrame/durationFrames — never the source's own fps). 0 (default) starts at the source's first frame."],
                                 "trimEndFrame": ["type": "integer", "description": "Optional. Frames trimmed off the END of the source media (the clip's out-point), in PROJECT frames — same units as trimStartFrame. Mutually exclusive with durationFrames. Omit both to run to the source end. Untrimmed source on each side stays as headroom, so the clip can later be extended to reveal it."],
                             ],
-                            "required": ["mediaRef", "startFrame"],
+                            "required": ["startFrame"],
                         ],
                     ],
                 ],
