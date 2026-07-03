@@ -22,6 +22,7 @@ final class ToolExecutor {
 
     private var agentUndoStack: [String] = []
     var feedbackState = FeedbackState()
+    var lastTranscriptContext: TranscriptionToolContext?
 
     func execute(name: String, args: [String: Any]) async -> ToolResult {
         guard let tool = ToolName(rawValue: name) else {
@@ -120,6 +121,7 @@ final class ToolExecutor {
         case .upscaleMedia:  return try upscaleMedia(editor, args)
         case .importMedia:   return try await importMedia(editor, args)
         case .importGDriveFolder: return try await importGDriveFolder(editor, args)
+        case .createMatte:   return try await createMatte(editor, args)
         case .listModels:    return listModels(args)
         case .analyzeAudioBeats: return try await analyzeAudioBeats(editor, args)
         case .getReferenceGuidance: return try getReferenceGuidance(args)

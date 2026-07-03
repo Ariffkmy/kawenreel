@@ -33,6 +33,7 @@ struct MediaTab: View {
     @State var marqueeSelection = MarqueeSelection()
 
     @State private var mediaPanelHeight: CGFloat = 600
+    @State private var showMatteSheet = false
 
     // GDrive import state
     @State private var showGDriveSheet = false
@@ -162,6 +163,8 @@ struct MediaTab: View {
         }
         .sheet(isPresented: $showGDriveSheet) {
             gdriveImportSheet
+        .sheet(isPresented: $showMatteSheet) {
+            MatteSheet(isPresented: $showMatteSheet)
         }
     }
 
@@ -594,6 +597,9 @@ struct MediaTab: View {
         return toolbarMenuIcon(systemName: "ellipsis") {
             Button(action: createNewFolderInCurrent) {
                 Label("New Folder", systemImage: "folder.badge.plus")
+            }
+            Button { showMatteSheet = true } label: {
+                Label("Create Matte", systemImage: "square.fill")
             }
             if canOrganize {
                 Button(action: organizeWithAgent) {

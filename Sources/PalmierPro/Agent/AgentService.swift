@@ -130,7 +130,7 @@ final class AgentService {
 
     var availableModels: [AnthropicModel] {
         if hasApiKey { return AnthropicModel.allCases }
-        return AccountService.shared.isPaid ? [.sonnet46] : [.haiku45]
+        return AccountService.shared.isPaid ? [.sonnet5] : [.haiku45]
     }
 
     private func selectClient() -> (any AgentClient)? {
@@ -155,7 +155,7 @@ final class AgentService {
     var effectiveModel: AnthropicModel {
         let available = availableModels
         if available.contains(model) { return model }
-        return available.first ?? .sonnet46
+        return available.first ?? .sonnet5
     }
 
     var model: AnthropicModel = {
@@ -163,7 +163,7 @@ final class AgentService {
            let m = AnthropicModel(rawValue: raw) {
             return m
         }
-        return .sonnet46
+        return .sonnet5
     }() {
         didSet { UserDefaults.standard.set(model.rawValue, forKey: "agentModel") }
     }

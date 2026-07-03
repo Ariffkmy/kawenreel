@@ -48,6 +48,7 @@ let package = Package(
                 .copy("Resources/Images"),
                 .copy("Resources/Changelog"),
                 .copy("Resources/DomainPacks"),
+                .copy("Resources/Localization"),
             ],
             plugins: ["MetalCIKernelPlugin"]
         ),

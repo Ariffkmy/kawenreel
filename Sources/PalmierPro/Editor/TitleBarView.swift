@@ -78,7 +78,7 @@ struct TitleBarTrailingView: View {
             .buttonStyle(.plain)
             .help("Send feedback")
 
-            UpdateBadgeView()
+            UpdateProjectBadge()
 
             Button(action: { editor.showExportDialog = true }) {
                 HStack(spacing: AppTheme.Spacing.xs) {

@@ -289,8 +289,8 @@ struct AgentPanelView: View {
     @ViewBuilder
     private var missingKeyState: some View {
         let account = AccountService.shared
-        return VStack(spacing: AppTheme.Spacing.xs) {
-            if editor.agentService.keychainReadBlocked {
+        if editor.agentService.keychainReadBlocked {
+            VStack(spacing: AppTheme.Spacing.xs) {
                 Text("Keychain is blocking the saved API key. Allow access in the Keychain dialog, or re-enter the key.")
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .multilineTextAlignment(.center)
@@ -302,34 +302,55 @@ struct AgentPanelView: View {
                         .foregroundStyle(AppTheme.Accent.primary)
                 }
                 .buttonStyle(.plain)
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Button(action: { SettingsWindowController.shared.show(tab: .account) }) {
-                        Text(missingKeyPrimaryAction(account: account))
-                            .underline()
-                            .foregroundStyle(AppTheme.Accent.primary)
-                    }
-                    .buttonStyle(.plain)
-
-                    Text("or use")
-                        .foregroundStyle(AppTheme.Text.tertiaryColor)
-
-                    Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
-                        Text("your own API key")
-                            .underline()
-                            .foregroundStyle(AppTheme.Accent.primary)
-                    }
-                    .buttonStyle(.plain)
+            }
+        } else {
+            VStack(spacing: AppTheme.Spacing.mdLg) {
+                Button {
+                    missingKeyPrimaryAction(account: account)
+                } label: {
+                    Label(missingKeyPrimaryLabel(account: account), systemImage: missingKeyPrimaryIcon(account: account))
+                        .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
                 }
+                .buttonStyle(.capsule(.prominent, size: .regular))
+
+                if !account.isSignedIn {
+                    Text("First-time sign-ups only")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+
+                Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
+                    Text("or use your own Anthropic key")
+                        .underline()
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .padding(.horizontal, AppTheme.Spacing.sm)
+                        .padding(.vertical, AppTheme.Spacing.xxs)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
+                .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
             }
         }
-        .font(.system(size: AppTheme.FontSize.md, weight: .medium))
     }
 
-    private func missingKeyPrimaryAction(account: AccountService) -> String {
-        if !account.isSignedIn { return "Sign in" }
+    private func missingKeyPrimaryLabel(account: AccountService) -> LocalizedStringKey {
+        if !account.isSignedIn { return "Log in for 250 free credits" }
         if !account.isPaid { return "Subscribe" }
         return "Open Settings"
+    }
+
+    private func missingKeyPrimaryIcon(account: AccountService) -> String {
+        if !account.isSignedIn { return "gift.fill" }
+        if !account.isPaid { return "sparkles" }
+        return "gearshape"
+    }
+
+    private func missingKeyPrimaryAction(account: AccountService) {
+        if !account.isSignedIn {
+            Task { await account.signInWithGoogle() }
+        } else {
+            SettingsWindowController.shared.show(tab: .account)
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
