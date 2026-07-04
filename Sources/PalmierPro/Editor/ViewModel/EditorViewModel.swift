@@ -469,8 +469,17 @@ final class EditorViewModel {
         return clipIds
     }
 
+    /// Video footage dragged onto the timeline defaults to at most this long. The untrimmed
+    /// remainder stays as source headroom, so the clip can still be extended by trimming.
+    static let maxDraggedClipSeconds: Double = 4
+
     func clipDurationFrames(for asset: MediaAsset, segment: ClosedRange<Double>?) -> Int {
-        let seconds = segment.map { $0.upperBound - $0.lowerBound } ?? asset.duration
+        var seconds = segment.map { $0.upperBound - $0.lowerBound } ?? asset.duration
+        // Cap full-length video drops (an explicitly chosen segment is honored as-is).
+        // Audio is exempt: dragged music/VO should keep its full length.
+        if segment == nil, asset.type == .video {
+            seconds = min(seconds, Self.maxDraggedClipSeconds)
+        }
         return max(1, secondsToFrame(seconds: seconds, fps: timeline.fps))
     }
 
