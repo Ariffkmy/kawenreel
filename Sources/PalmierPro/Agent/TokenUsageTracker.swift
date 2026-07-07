@@ -56,6 +56,80 @@ final class TokenUsageTracker {
         )
         records.append(record)
         save()
+        flushIfDue()
+    }
+
+    // MARK: Remote reporting (aggregated)
+
+    /// Flush cadence: at most one remote write batch per interval, so a heavy
+    /// agent session costs a handful of upserts instead of one insert per request.
+    private static let flushInterval: TimeInterval = 30 * 60
+    private static let syncedCountKey = "tokenUsageSyncedCount"
+
+    @ObservationIgnored private var lastFlushAttempt: Date = .distantPast
+    @ObservationIgnored private var flushTask: Task<Void, Never>?
+
+    private func flushIfDue() {
+        guard Date().timeIntervalSince(lastFlushAttempt) >= Self.flushInterval else { return }
+        flush()
+    }
+
+    /// Sums unsynced records by (provider, model) and reports one delta per pair
+    /// through the `report_token_usage` RPC. No-op when signed out; the local
+    /// JSON store remains the durable record and the watermark only advances on
+    /// success, so failed flushes retry with the next batch.
+    func flush() {
+        guard flushTask == nil else { return }
+        guard let token = SupabaseService.shared.currentAccessToken else { return }
+        let synced = min(UserDefaults.standard.integer(forKey: Self.syncedCountKey), records.count)
+        let pending = Array(records[synced...])
+        guard !pending.isEmpty else { return }
+        lastFlushAttempt = Date()
+
+        struct GroupKey: Hashable { let provider: String; let model: String }
+        var groups: [GroupKey: (requests: Int, input: Int, output: Int, cacheRead: Int, cacheWrite: Int)] = [:]
+        for r in pending {
+            var g = groups[GroupKey(provider: r.provider, model: r.model)] ?? (0, 0, 0, 0, 0)
+            g.requests += 1
+            g.input += r.inputTokens
+            g.output += r.outputTokens
+            g.cacheRead += r.cacheReadTokens
+            g.cacheWrite += r.cacheWriteTokens
+            groups[GroupKey(provider: r.provider, model: r.model)] = g
+        }
+
+        let newCount = synced + pending.count
+        flushTask = Task { @MainActor [weak self] in
+            defer { self?.flushTask = nil }
+            do {
+                for (key, g) in groups {
+                    let body: [String: Any] = [
+                        "p_provider": key.provider,
+                        "p_model": key.model,
+                        "p_requests": g.requests,
+                        "p_input": g.input,
+                        "p_output": g.output,
+                        "p_cache_read": g.cacheRead,
+                        "p_cache_write": g.cacheWrite,
+                    ]
+                    var request = URLRequest(
+                        url: SupabaseConfig.url.appendingPathComponent("rest/v1/rpc/report_token_usage")
+                    )
+                    request.httpMethod = "POST"
+                    request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    let (_, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        throw URLError(.badServerResponse)
+                    }
+                }
+                UserDefaults.standard.set(newCount, forKey: Self.syncedCountKey)
+            } catch {
+                Log.agent.warning("token usage flush failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: Aggregates
@@ -73,6 +147,7 @@ final class TokenUsageTracker {
 
     func reset() {
         records.removeAll()
+        UserDefaults.standard.set(0, forKey: Self.syncedCountKey)
         save()
     }
 
