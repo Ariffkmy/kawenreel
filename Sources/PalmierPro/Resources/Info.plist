@@ -67,7 +67,7 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/Ariffkmy/kawenreel/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_YOUR_ED25519_PUBLIC_KEY</string>
+	<string>wZZLu1u93lzp/uaMaNuuxz5wY/3gBggdgIbFNsG4fMI=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
