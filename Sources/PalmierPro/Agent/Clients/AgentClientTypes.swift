@@ -14,6 +14,13 @@ enum AnthropicModel: String, CaseIterable, Sendable {
         case .haiku45: "Haiku 4.5"
         }
     }
+
+    var requestExtras: [String: Any] {
+        switch self {
+        case .sonnet5: ["output_config": ["effort": "low"]]
+        default: [:]
+        }
+    }
 }
 
 enum AgentProviderMode: String, CaseIterable, Sendable {
@@ -220,6 +227,7 @@ enum AnthropicRequestBody {
             "messages": messageBlocks,
         ]
         if !toolBlocks.isEmpty { body["tools"] = toolBlocks }
+        for (key, value) in model.requestExtras { body[key] = value }
         return body
     }
 }
