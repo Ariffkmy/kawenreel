@@ -1,34 +1,21 @@
 import Foundation
 import Combine
-@preconcurrency import ConvexMobile
 
 /// The RPC layer for the backend
 @MainActor
 enum GenerationBackend {
     static func subscribe(
         jobId: String
-    ) -> AnyPublisher<BackendGenerationJob?, ClientError>? {
-        guard let convex = AccountService.shared.convex else { return nil }
-        return convex.subscribe(
-            to: "generations:byId",
-            with: ["id": jobId],
-            yielding: BackendGenerationJob?.self,
-        )
+    ) -> AnyPublisher<BackendGenerationJob?, Error>? {
+        // Inert until the Kawenreel backend ships a generation endpoint.
+        nil
     }
 
     static func uploadReference(
         fileURL: URL,
         contentType: String,
     ) async throws -> String {
-        guard let convex = AccountService.shared.convex else {
-            throw GenerationBackendError.notConfigured
-        }
-        let storageId = try await BackendStorage.uploadStaged(fileURL: fileURL, contentType: contentType)
-        let result: UrlResponse = try await convex.action(
-            "uploads:commitUpload",
-            with: ["storageId": storageId],
-        )
-        return result.url
+        throw GenerationBackendError.notConfigured
     }
 
     static func submit(
@@ -36,25 +23,13 @@ enum GenerationBackend {
         params: BackendGenerationParams,
         projectId: String? = nil,
     ) async throws -> String {
-        guard let convex = AccountService.shared.convex else {
-            throw GenerationBackendError.notConfigured
-        }
-        let args: [String: ConvexEncodable?] = [
-            "model": model,
-            "params": params,
-            "projectId": projectId,
-        ]
-        let result: SubmitGenerationResult = try await convex.mutation(
-            "generations:submit",
-            with: args,
-        )
-        return result.jobId
+        throw GenerationBackendError.notConfigured
     }
 }
 
 // MARK: - Backend generation types
 
-enum BackendGenerationParams: Encodable, ConvexEncodable, Sendable {
+enum BackendGenerationParams: Encodable, Sendable {
     case video(VideoGenerationParams)
     case image(ImageGenerationParams)
     case audio(AudioGenerationParams)

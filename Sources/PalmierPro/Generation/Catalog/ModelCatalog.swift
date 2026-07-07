@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-@preconcurrency import ConvexMobile
 
 enum ModelKind: Sendable {
     case video(VideoModelConfig)
@@ -48,22 +47,7 @@ final class ModelCatalog {
         guard !didConfigure else { return }
         didConfigure = true
 
-        guard let client = AccountService.shared.convex else { return }
-
-        subscription = client
-            .subscribe(to: "models:list", yielding: [CatalogEntry].self)
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] completion in
-                    if case .failure(let err) = completion {
-                        Log.generation.error("ModelCatalog subscription failed: \(err.localizedDescription)")
-                        self?.lastError = err.localizedDescription
-                    }
-                },
-                receiveValue: { [weak self] entries in
-                    self?.apply(entries)
-                }
-            )
+        // Live catalog refresh returns when the Kawenreel backend ships a models endpoint.
     }
 
     private func apply(_ entries: [CatalogEntry]) {

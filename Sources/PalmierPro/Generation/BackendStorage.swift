@@ -1,5 +1,4 @@
 import Foundation
-@preconcurrency import ConvexMobile
 
 enum BackendStorage {
     static func uploadStaged(fileURL: URL, contentType: String) async throws -> String {
@@ -18,10 +17,8 @@ enum BackendStorage {
 
     @MainActor
     private static func uploadTicket() async throws -> StagingTicket {
-        guard let convex = AccountService.shared.convex else {
-            throw GenerationBackendError.notConfigured
-        }
-        return try await convex.mutation("uploads:generateUploadTicket")
+        // Inert until the Kawenreel backend ships an upload endpoint.
+        throw GenerationBackendError.notConfigured
     }
 
     private static func assertHTTPOK(respData: Data, response: URLResponse) throws {

@@ -1,5 +1,5 @@
 {
-  "originHash" : "20c3ed9e75048bb24a353f4d141820e141a03eb07514078c3ed503d9c03a2380",
+  "originHash" : "5c0656f1c740782ccf996d9a7d9d52d83df824edc2ae3cfa957925f9e851e813",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -11,39 +11,12 @@
       }
     },
     {
-      "identity" : "clerk-convex-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/clerk/clerk-convex-swift",
-      "state" : {
-        "revision" : "5c7e62ee329a00df0f9ed73462c54b069a7286ab",
-        "version" : "0.1.0"
-      }
-    },
-    {
-      "identity" : "clerk-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/clerk/clerk-ios",
-      "state" : {
-        "revision" : "9b6c83e780c48af3a5cb8c40305674d9d8cb0fc6",
-        "version" : "1.2.4"
-      }
-    },
-    {
       "identity" : "compress-nio",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adam-fowler/compress-nio.git",
       "state" : {
         "revision" : "e1caa19077dda4b00441142ef57da3db02acd466",
         "version" : "1.4.2"
-      }
-    },
-    {
-      "identity" : "convex-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/get-convex/convex-swift",
-      "state" : {
-        "revision" : "125b71b2f8725931a5b0e8252f0799ef2adad120",
-        "version" : "0.8.1"
       }
     },
     {
@@ -98,24 +71,6 @@
       "state" : {
         "revision" : "eb889e01b7267bc6d9c01fde91bc517b09506c2d",
         "version" : "0.31.5"
-      }
-    },
-    {
-      "identity" : "nuke",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kean/Nuke.git",
-      "state" : {
-        "revision" : "63a8fcbd6621340a2410bc3e9575ac97058615f4",
-        "version" : "13.0.6"
-      }
-    },
-    {
-      "identity" : "phonenumberkit",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit",
-      "state" : {
-        "revision" : "c93fb1c3eef581fbd08acf99d4886dea12b5c1dc",
-        "version" : "5.0.3"
       }
     },
     {
