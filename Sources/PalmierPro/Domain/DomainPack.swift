@@ -47,6 +47,26 @@ struct DomainPack: Decodable, Sendable {
     var momentNames: [String] { moments.keys.sorted() }
 }
 
+private final class DomainBundleToken {}
+
+/// Resolves a bundled resource path across all run contexts: packaged .app,
+/// `swift run` (cwd-relative bundle), and `swift test` (build-dir bundle).
+enum DomainResources {
+    static func url(_ name: String) -> URL? {
+        let root = Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let buildDir = Bundle(for: DomainBundleToken.self).bundleURL.deletingLastPathComponent()
+        let devRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .deletingLastPathComponent()  // from .build/debug up to project dir
+        let candidates = [
+            root.appendingPathComponent(name),
+            root.appendingPathComponent("PalmierPro_PalmierPro.bundle/\(name)"),
+            buildDir.appendingPathComponent("PalmierPro_PalmierPro.bundle/\(name)"),
+            devRoot.appendingPathComponent("Sources/PalmierPro/Resources/\(name)"),
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
 enum DomainPackStore {
     @MainActor private static var cache: [String: DomainPack] = [:]
 
@@ -54,20 +74,10 @@ enum DomainPackStore {
     @MainActor
     static func load(_ domain: String) -> DomainPack? {
         if let hit = cache[domain] { return hit }
-        let root = Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let devRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .deletingLastPathComponent()  // from .build/debug up to project dir
-        let candidates = [
-            root.appendingPathComponent("DomainPacks/\(domain).json"),
-            root.appendingPathComponent("PalmierPro_PalmierPro.bundle/DomainPacks/\(domain).json"),
-            devRoot.appendingPathComponent("Sources/PalmierPro/Resources/DomainPacks/\(domain).json"),
-        ]
-        for url in candidates where FileManager.default.fileExists(atPath: url.path) {
-            guard let data = try? Data(contentsOf: url),
-                  let pack = try? JSONDecoder().decode(DomainPack.self, from: data) else { continue }
-            cache[domain] = pack
-            return pack
-        }
-        return nil
+        guard let url = DomainResources.url("DomainPacks/\(domain).json"),
+              let data = try? Data(contentsOf: url),
+              let pack = try? JSONDecoder().decode(DomainPack.self, from: data) else { return nil }
+        cache[domain] = pack
+        return pack
     }
 }

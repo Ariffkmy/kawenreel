@@ -28,38 +28,19 @@ enum DomainColorStore {
     @MainActor
     static func load(_ domain: String) -> DomainColorProfile? {
         if let hit = cache[domain] { return hit }
-        let root = Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let devRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .deletingLastPathComponent()
-        let name = "DomainPacks/\(domain)_colors.json"
-        let candidates = [
-            root.appendingPathComponent(name),
-            root.appendingPathComponent("PalmierPro_PalmierPro.bundle/\(name)"),
-            devRoot.appendingPathComponent("Sources/PalmierPro/Resources/\(name)"),
-        ]
-        for url in candidates where FileManager.default.fileExists(atPath: url.path) {
-            if let data = try? Data(contentsOf: url),
-               let profile = try? JSONDecoder().decode(DomainColorProfile.self, from: data) {
-                cache[domain] = profile
-                return profile
-            }
+        guard let url = DomainResources.url("DomainPacks/\(domain)_colors.json"),
+              let data = try? Data(contentsOf: url),
+              let profile = try? JSONDecoder().decode(DomainColorProfile.self, from: data) else {
+            cache[domain] = DomainColorProfile?.none
+            return nil
         }
-        cache[domain] = DomainColorProfile?.none
-        return nil
+        cache[domain] = profile
+        return profile
     }
 
     /// Absolute path of a look's bundled .cube LUT, or nil if absent.
     @MainActor
     static func lutURL(fileName: String) -> URL? {
-        let root = Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let devRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .deletingLastPathComponent()
-        let name = "DomainPacks/LUTs/\(fileName)"
-        let candidates = [
-            root.appendingPathComponent(name),
-            root.appendingPathComponent("PalmierPro_PalmierPro.bundle/\(name)"),
-            devRoot.appendingPathComponent("Sources/PalmierPro/Resources/\(name)"),
-        ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+        DomainResources.url("DomainPacks/LUTs/\(fileName)")
     }
 }
