@@ -68,8 +68,6 @@ final class AgentService {
         switch providerMode {
         case .claudeOwnKey:
             return hasApiKey
-        case .ilmuAI:
-            return true
         case .defaultSetting:
             if hasOpenRouterKey { return true }
             let account = AccountService.shared
@@ -125,8 +123,6 @@ final class AgentService {
         case .claudeOwnKey:
             guard hasApiKey else { return nil }
             return AnthropicClient(apiKey: apiKey, model: chosen)
-        case .ilmuAI:
-            return OpenAICompatibleClient(config: .ilmu())
         case .defaultSetting:
             if let config = OpenAICompatibleConfig.resolved() {
                 return OpenAICompatibleClient(config: config)
