@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Floating chat panel for Palmier Pro support.
+/// Floating chat panel for Kawenreel support.
 /// Present as a sheet or host in its own window.
 struct SupportBotPanel: View {
     @Environment(\.dismiss) private var dismiss
@@ -39,7 +39,7 @@ struct SupportBotPanel: View {
             Image(systemName: "message.fill")
                 .foregroundStyle(AppTheme.Accent.primary)
                 .imageScale(.small)
-            Text("Palmier Pro Support")
+            Text("Kawenreel Support")
                 .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
             Spacer()

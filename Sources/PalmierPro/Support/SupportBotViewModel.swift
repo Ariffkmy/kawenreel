@@ -48,7 +48,7 @@ final class SupportBotViewModel {
     private var sessionId: String?
     private let service = SupportBotService.shared
 
-    private static let greeting = "Ask a question about Palmier Pro, or report a problem."
+    private static let greeting = "Ask a question about Kawenreel, or report a problem."
 
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
     let osVersion: String = {
