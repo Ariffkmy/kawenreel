@@ -321,17 +321,6 @@ enum AppTheme {
         static let controlWidth: CGFloat = 116
     }
 
-    enum SupportPanel {
-        static let width: CGFloat = 380
-        static let minHeight: CGFloat = 400
-        static let maxHeight: CGFloat = 600
-        static let settingsSheetHeight: CGFloat = 200
-        static let feedbackSheetHeight: CGFloat = 340
-        static let feedbackEditorHeight: CGFloat = 120
-        static let statusDotSize: CGFloat = 6
-        static let inputMinHeight: CGFloat = 28
-    }
-
     // MARK: - Shadows
 
     struct ShadowStyle {

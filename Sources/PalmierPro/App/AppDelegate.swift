@@ -74,6 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    @objc func showSupport(_ sender: Any?) {
+        SupportLink.open()
+    }
+
+    @MainActor
     @objc func showTutorial(_ sender: Any?) {
         guard let editor = AppState.shared.activeProject?.editorViewModel else { return }
         editor.tour.start(in: editor)
