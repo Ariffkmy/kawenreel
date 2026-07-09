@@ -230,7 +230,7 @@ final class HomeWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(AppTheme.Window.homeDefault)
         window.minSize = AppTheme.Window.homeMin
-        window.title = "Palmier Pro"
+        window.title = "Kawenreel"
         window.setFrameAutosaveName("PalmierProHome-v3")
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)

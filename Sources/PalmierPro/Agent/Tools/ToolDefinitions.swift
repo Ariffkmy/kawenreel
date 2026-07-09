@@ -226,7 +226,7 @@ enum ToolDefinitions {
                         "description": "Exactly one of url, path, bytes, or matte must be set. mimeType is required when bytes is set; for url it acts as a type-inference override.",
                         "properties": [
                             "url": ["type": "string", "description": "HTTPS URL. Pre-signed URLs are fine but must not expire mid-download."],
-                            "path": ["type": "string", "description": "Absolute local file or directory path, readable by the Palmier process. A directory is imported recursively — every openable file is pulled in and the folder structure is replicated as media folders."],
+                            "path": ["type": "string", "description": "Absolute local file or directory path, readable by the Kawenreel process. A directory is imported recursively — every openable file is pulled in and the folder structure is replicated as media folders."],
                             "bytes": ["type": "string", "description": "Base64-encoded media data. Prefer url or path for anything over ~10MB."],
                             "matte": [
                                 "type": "object",
@@ -1098,7 +1098,7 @@ enum ToolDefinitions {
 
     static let newProject = AgentTool(
         name: .newProject,
-        description: "Create a new empty project in the user's Palmier Pro folder and make it active. Fails if a project with that name already exists — pick another name. Optionally set fps / aspectRatio / quality at creation so the first clips land on the right canvas (same semantics as set_project_settings). Returns the same snapshot as open_project.",
+        description: "Create a new empty project in the user's Kawenreel folder and make it active. Fails if a project with that name already exists — pick another name. Optionally set fps / aspectRatio / quality at creation so the first clips land on the right canvas (same semantics as set_project_settings). Returns the same snapshot as open_project.",
         inputSchema: objectSchema(
             properties: [
                 "name": ["type": "string", "description": "Project name (without extension). Defaults to 'Untitled Project'."],
