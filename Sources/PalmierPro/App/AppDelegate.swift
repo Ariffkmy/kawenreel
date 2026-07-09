@@ -78,6 +78,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SupportLink.open()
     }
 
+    // Temporary: replay the full first-run flow without a fresh account.
+    @MainActor
+    @objc func previewFirstRun(_ sender: Any?) {
+        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        TourController.resetFirstRun()
+        OnboardingWindowController.shared.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @MainActor
     @objc func showTutorial(_ sender: Any?) {
         guard let editor = AppState.shared.activeProject?.editorViewModel else { return }

@@ -398,6 +398,13 @@ final class VideoProject: NSDocument {
 
         AppState.shared.showEditor(for: self)
 
+        // First editor ever opened: run the tour once, unprompted.
+        if !TourController.hasRun {
+            DispatchQueue.main.async { [editorViewModel] in
+                editorViewModel.tour.start(in: editorViewModel)
+            }
+        }
+
         if let log = loadedGenerationLog {
             editorViewModel.generationLog = log
             loadedGenerationLog = nil

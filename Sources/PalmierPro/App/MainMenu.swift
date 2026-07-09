@@ -197,6 +197,9 @@ enum MainMenuBuilder {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Kawenreel Support", action: #selector(AppDelegate.showSupport(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Send Feedback…", action: #selector(AppDelegate.showFeedback(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        // Temporary: remove before release.
+        menu.addItem(withTitle: "Preview First Run (Temp)", action: #selector(AppDelegate.previewFirstRun(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }
