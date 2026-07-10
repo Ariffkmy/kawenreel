@@ -36,6 +36,8 @@ fi
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-kawenreel-notary}"
 SENTRY_DSN="${SENTRY_DSN:-}"
+POSTHOG_PROJECT_TOKEN="${POSTHOG_PROJECT_TOKEN:-}"
+POSTHOG_HOST="${POSTHOG_HOST:-https://us.i.posthog.com}"
 PROVISION_PROFILE="${PROVISION_PROFILE:-}"
 ENTITLEMENTS="$ROOT/scripts/PalmierPro.entitlements"
 KEYCHAIN_ACCESS_GROUP="${KEYCHAIN_ACCESS_GROUP:-}"
@@ -75,6 +77,15 @@ else
   echo "==> SENTRY_DSN not set — telemetry will be a no-op in this build"
 fi
 
+if [ -n "$POSTHOG_PROJECT_TOKEN" ]; then
+  echo "==> Injecting PostHog analytics config into Info.plist"
+  /usr/libexec/PlistBuddy -c "Delete :PostHogProjectToken" "$APP/Contents/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :PostHogProjectToken string $POSTHOG_PROJECT_TOKEN" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Delete :PostHogHost" "$APP/Contents/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :PostHogHost string $POSTHOG_HOST" "$APP/Contents/Info.plist"
+else
+  echo "==> POSTHOG_PROJECT_TOKEN not set — product analytics will be a no-op in this build"
+fi
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
 
@@ -109,6 +120,12 @@ if [ -d "$RES_BUNDLE/Changelog" ]; then
   cp -R "$RES_BUNDLE/Changelog" "$APP/Contents/Resources/"
 else
   echo "!! missing Changelog/ in SwiftPM resource bundle at $RES_BUNDLE" >&2
+  exit 1
+fi
+if [ -d "$RES_BUNDLE/Models" ]; then
+  cp -R "$RES_BUNDLE/Models" "$APP/Contents/Resources/"
+else
+  echo "!! missing Models/ in SwiftPM resource bundle at $RES_BUNDLE" >&2
   exit 1
 fi
 

@@ -149,7 +149,8 @@ final class MediaAsset: Identifiable {
         )
     }
 
-    func loadMetadata() async {
+    @discardableResult
+    func loadMetadata() async -> Bool {
         if type == .image {
             duration = Defaults.imageDurationSeconds
             let imageURL = url
@@ -161,11 +162,11 @@ final class MediaAsset: Identifiable {
             if let image = metadata.thumbnail {
                 thumbnail = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
             }
-            return
+            return metadata.width != nil && metadata.height != nil
         }
 
         if type == .lottie {
-            guard let info = try? await LottieVideoGenerator.inspect(fileAt: url) else { return }
+            guard let info = try? await LottieVideoGenerator.inspect(fileAt: url) else { return false }
             duration = info.meta.duration
             sourceWidth = Int(info.meta.size.width)
             sourceHeight = Int(info.meta.size.height)
@@ -173,8 +174,10 @@ final class MediaAsset: Identifiable {
             if let cg = info.thumbnail {
                 thumbnail = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
             }
-            return
+            return true
         }
+
+        guard type == .video || type == .audio else { return true }
 
         let avAsset = AVURLAsset(url: url)
         if type != .video, let d = try? await avAsset.load(.duration) {
@@ -214,6 +217,11 @@ final class MediaAsset: Identifiable {
                     thumbnail = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
                 }
             }
+            return hasVideoTrack
         }
+        if type == .audio {
+            return (try? await avAsset.loadTracks(withMediaType: .audio).first) != nil
+        }
+        return true
     }
 }

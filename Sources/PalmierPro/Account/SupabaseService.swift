@@ -33,6 +33,13 @@ final class SupabaseService {
                 self.currentUser = state.session?.user
                 self.currentAccessToken = state.session?.accessToken
                 self.didLoadInitialSession = true
+                if let user = self.currentUser {
+                    Telemetry.setUser(id: user.id.uuidString)
+                    Analytics.identifyUser(id: user.id.uuidString)
+                } else {
+                    Telemetry.setUser(id: nil)
+                    Analytics.resetUser()
+                }
                 self.onAuthChange?(self.currentUser != nil)
             }
         }

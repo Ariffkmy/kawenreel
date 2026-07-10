@@ -62,6 +62,7 @@ final class EditorViewModel {
     var denoiseBaked: Set<String> = []
     var speechAnalyzingCount: Int = 0
     var speakerRegistry: [SpeakerRegistryEntry] = []
+    var multicamGroups: [MulticamSource] = []
     var speakerAssignments: [String: [String: Int]] = [:]
     var speakerIdentifyPhase: String?
     var speakerIdentifyInFlight: Bool { speakerIdentifyPhase != nil }
@@ -148,7 +149,13 @@ final class EditorViewModel {
     }
     // MARK: - Media library (in-memory, rebuilt on project open)
 
-    var mediaAssets: [MediaAsset] = []
+    var mediaAssets: [MediaAsset] = [] {
+        didSet {
+            mediaAssetsById = Dictionary(mediaAssets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        }
+    }
+    /// O(1) lookup for draw-path callers; rebuilt on any `mediaAssets` mutation.
+    private(set) var mediaAssetsById: [String: MediaAsset] = [:]
     var offlineMediaRefs: Set<String> = []
     var unprocessableMediaRefs: Set<String> = []
     var missingMediaRefs: Set<String> = []
@@ -158,12 +165,7 @@ final class EditorViewModel {
     var projectURL: URL? {
         didSet {
             guard projectURL != oldValue else { return }
-            projectId = projectURL.flatMap { url in
-                let resolved = url.standardizedFileURL
-                return ProjectRegistry.shared.entries
-                    .first(where: { $0.url.standardizedFileURL == resolved })?
-                    .id.uuidString
-            }
+            refreshProjectId()
         }
     }
     private(set) var projectId: String?
@@ -222,6 +224,15 @@ final class EditorViewModel {
     }() {
         didSet {
             UserDefaults.standard.set(markDeadAir, forKey: "markDeadAir")
+            mediaVisualCache.timelineView?.needsDisplay = true
+        }
+    }
+
+    var markBeats: Bool = {
+        UserDefaults.standard.object(forKey: "markBeats") as? Bool ?? true
+    }() {
+        didSet {
+            UserDefaults.standard.set(markBeats, forKey: "markBeats")
             mediaVisualCache.timelineView?.needsDisplay = true
         }
     }
@@ -320,6 +331,16 @@ final class EditorViewModel {
             "unprocessableMedia": unprocessableMediaRefs.count,
             "generationLogEntries": generationLog.entries.count,
             "agentSessions": agentService.sessions.count
+        ]
+    }
+
+    func refreshProjectId() {
+        projectId = projectURL.flatMap { ProjectRegistry.shared.id(for: $0)?.uuidString }
+    }
+
+    func analyticsSnapshot() -> [String: Any] {
+        return [
+            "project_id": projectId ?? "unknown",
         ]
     }
 

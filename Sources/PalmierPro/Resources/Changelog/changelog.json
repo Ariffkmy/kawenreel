@@ -2,13 +2,14 @@
   "changelogURL": "https://github.com/Ariffkmy/kawenreel/releases",
   "entries": [
     {
-      "version": "0.6.1",
-      "date": "2026-07-04",
+      "version": "0.6.4",
+      "date": "2026-07-09",
       "sections": [
         {
           "heading": "New",
           "items": [
-            "Multiple timelines support: You can now create multiple timelines within a project and nest them inside each other."
+            "Multicam editing: Agent can now work with multiple camera footage with better tools. Especially useful for podcast or other multi-camera setups.",
+            "10-bit HDR export: New HEVC 10-bit HDR export option."
           ]
         }
       ]

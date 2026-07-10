@@ -16,9 +16,9 @@ extension ToolExecutor {
             data: ["assetId": asset.id, "assetType": asset.type.rawValue]
         )
 
-        let analysis: BeatAnalysis
+        let analysis: MusicEnergyAnalysis
         do {
-            analysis = try await BeatDetector.analyze(url: asset.url)
+            analysis = try await MusicEnergyDetector.analyze(url: asset.url)
         } catch {
             throw ToolError("Beat analysis failed: \(error.localizedDescription)")
         }

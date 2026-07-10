@@ -4,7 +4,7 @@ import CoreImage
 import Foundation
 
 /// Extracts a StyleProfile from a reference video: shot boundaries (FrameSampler),
-/// per-shot moments (prototype classifier), cut pacing, music tempo (BeatDetector),
+/// per-shot moments (prototype classifier), cut pacing, music tempo (MusicEnergyDetector),
 /// and an averaged color signature (ColorScopes).
 enum StyleAnalyzer {
     enum AnalyzerError: LocalizedError {
@@ -65,7 +65,7 @@ enum StyleAnalyzer {
         // Tempo.
         var music: StyleProfile.Music?
         var cutsOnBeat: Double?
-        if hasAudio, let analysis = try? await BeatDetector.analyze(url: url) {
+        if hasAudio, let analysis = try? await MusicEnergyDetector.analyze(url: url) {
             if analysis.confidence >= 0.4 {
                 music = StyleProfile.Music(bpm: analysis.bpm, confidence: analysis.confidence)
                 cutsOnBeat = cutsOnBeatFraction(cutTimes: Array(boundaries.dropFirst()), beats: analysis.beats)

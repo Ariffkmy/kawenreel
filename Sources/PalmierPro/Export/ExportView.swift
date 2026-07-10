@@ -438,6 +438,7 @@ struct ExportView: View {
         case .h264:   0.63e6
         case .h265:   0.32e6
         case .prores: 9.0e6
+        case .hdr:    0.45e6
         }
         let bytesPerSec = bytesPerSecPerMP * max(0.1, megapixels)
         return ByteCountFormatter.string(fromByteCount: Int64(bytesPerSec * seconds), countStyle: .file)
@@ -476,7 +477,7 @@ struct ExportView: View {
             .xml
         case .fcpxml:
             UTType(filenameExtension: "fcpxml") ?? .xml
-        case .prores:
+        case .prores, .hevcHDR:
             .movie
         case .h264, .h265:
             .mpeg4Movie
@@ -496,7 +497,8 @@ struct ExportView: View {
                     fcpxmlVersion: fcpxmlVersion,
                     fcpxmlTarget: fcpxmlTarget,
                     missingMediaRefs: editor.missingMediaRefs,
-                    outputURL: url
+                    outputURL: url,
+                    analyticsContext: ExportAnalyticsContext(source: "manual", projectId: editor.projectId)
                 )
                 // Keep the dialog open on a warning so the user sees what was skipped.
                 if service.error == nil && service.warning == nil {
@@ -521,7 +523,8 @@ struct ExportView: View {
                     manifest: editor.mediaManifest,
                     generationLog: editor.generationLog,
                     sourceProjectURL: editor.projectURL,
-                    outputURL: url
+                    outputURL: url,
+                    analyticsContext: ExportAnalyticsContext(source: "manual", projectId: editor.projectId)
                 )
                 guard let report, service.error == nil else { return }
                 if report.missing.isEmpty {
