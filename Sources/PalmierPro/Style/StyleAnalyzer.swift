@@ -38,7 +38,7 @@ enum StyleAnalyzer {
         url: URL, duration: Double, hasAudio: Bool,
         name: String, embedder: VisualEmbedder?, prototypes: DomainPrototypes?
     ) async throws -> StyleProfile {
-        // Shots: FrameSampler flags a new shot on luma scene changes; the flagged
+        // Shots: FrameSampler flags a new shot on scene changes; the flagged
         // frame is the shot's representative image for moment scoring.
         var boundaries: [Double] = []
         var shotFrames: [CGImage] = []
