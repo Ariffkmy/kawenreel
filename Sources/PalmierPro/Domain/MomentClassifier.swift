@@ -25,24 +25,14 @@ enum DomainPrototypeStore {
     @MainActor
     static func load(_ domain: String) -> DomainPrototypes? {
         if let hit = cache[domain] { return hit }
-        let root = Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let devRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .deletingLastPathComponent()
-        let name = "DomainPacks/\(domain)_prototypes.json"
-        let candidates = [
-            root.appendingPathComponent(name),
-            root.appendingPathComponent("PalmierPro_PalmierPro.bundle/\(name)"),
-            devRoot.appendingPathComponent("Sources/PalmierPro/Resources/\(name)"),
-        ]
-        for url in candidates where FileManager.default.fileExists(atPath: url.path) {
-            if let data = try? Data(contentsOf: url),
-               let pack = try? JSONDecoder().decode(DomainPrototypes.self, from: data) {
-                cache[domain] = pack
-                return pack
-            }
+        guard let url = DomainResources.url("DomainPacks/\(domain)_prototypes.json"),
+              let data = try? Data(contentsOf: url),
+              let pack = try? JSONDecoder().decode(DomainPrototypes.self, from: data) else {
+            cache[domain] = DomainPrototypes?.none
+            return nil
         }
-        cache[domain] = DomainPrototypes?.none
-        return nil
+        cache[domain] = pack
+        return pack
     }
 }
 

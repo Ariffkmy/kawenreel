@@ -63,8 +63,6 @@ struct HomeView: View {
         HStack(spacing: AppTheme.Spacing.md) {
             WelcomeTitle()
 
-            UpdateBadgeView()
-
             Spacer()
         }
         .padding(.horizontal, AppTheme.Spacing.xlXxl)
@@ -162,14 +160,15 @@ private struct WelcomeTitle: View {
 
     private var title: String {
         if let first = account.account?.user.firstName {
-            return "Welcome to Palmier Pro, \(first)"
+            return "Welcome to Kawenreel, \(first)"
         }
-        return "Welcome to Palmier Pro"
+        return "Welcome to Kawenreel"
     }
 }
 
 private struct HomeSidebar: View {
     @Bindable private var account = AccountService.shared
+    @Bindable private var updater = Updater.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -202,6 +201,11 @@ private struct HomeSidebar: View {
 
             Spacer(minLength: 0)
 
+            UpdateSidebarCard()
+                .padding(.horizontal, AppTheme.Spacing.smMd)
+                .padding(.bottom, AppTheme.Spacing.sm)
+                .animation(.easeInOut(duration: AppTheme.Anim.transition), value: updater.updateAvailable)
+
             SidebarRowButton(
                 label: "Settings",
                 systemImage: "gearshape",
@@ -226,7 +230,7 @@ final class HomeWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hostingController)
         window.setContentSize(AppTheme.Window.homeDefault)
         window.minSize = AppTheme.Window.homeMin
-        window.title = "Palmier Pro"
+        window.title = "Kawenreel"
         window.setFrameAutosaveName("PalmierProHome-v3")
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)

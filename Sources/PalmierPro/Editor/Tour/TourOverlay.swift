@@ -155,6 +155,7 @@ struct TourOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 0) {
+                linkRow("Chat with Support", "paperplane.fill") { SupportLink.open() }
                 linkRow("Skills", "book.closed.fill") { SettingsWindowController.shared.show(tab: .skills) }
                 linkRow("MCP Setup", "puzzlepiece.extension.fill") { HelpWindowController.shared.show(tab: .mcp) }
                 linkRow("Keyboard Shortcuts", "keyboard") { HelpWindowController.shared.show(tab: .shortcuts) }

@@ -25,7 +25,7 @@ struct WelcomeOverlay: View {
                     .font(.system(size: AppTheme.FontSize.title2, weight: .light))
                     .tracking(AppTheme.Tracking.tight)
                     .foregroundStyle(AppTheme.Text.primaryColor)
-                Text("Open a sample project and let the tour walk you through your first AI edit. Kawenreel is in beta — the feedback button in the editor reaches us directly.")
+                Text("Open a sample project and let the tour walk you through your first AI edit. Kawenreel is in beta — the support chat in the editor reaches us directly on Telegram.")
                     .font(.system(size: AppTheme.FontSize.smMd))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                     .fixedSize(horizontal: false, vertical: true)

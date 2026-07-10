@@ -1,6 +1,28 @@
 import Foundation
 
 extension ToolExecutor {
+    private var canUsePaidModels: Bool { AccountService.shared.isPaid }
+    private func modelAvailable(paidOnly: Bool) -> Bool { canUsePaidModels || !paidOnly }
+
+    private func requirePlan(for modelId: String, paidOnly: Bool) throws {
+        if paidOnly && !canUsePaidModels {
+            throw ToolError(
+                "Model '\(modelId)' requires a paid plan. Pick a free model from list_models, "
+                + "or tell the user to subscribe."
+            )
+        }
+    }
+
+    private func defaultModelId(_ ids: [(id: String, paidOnly: Bool)], kind: String) throws -> String {
+        guard !ids.isEmpty else {
+            throw ToolError("Model catalog not loaded yet. Try again in a moment.")
+        }
+        guard let match = ids.first(where: { modelAvailable(paidOnly: $0.paidOnly) }) else {
+            throw ToolError("No \(kind) model is available on the current plan. Tell the user to subscribe.")
+        }
+        return match.id
+    }
+
     func generate(_ editor: EditorViewModel, _ args: [String: Any], type: ClipType) throws -> ToolResult {
         let prompt = try args.requireString("prompt")
         guard AccountService.shared.isSignedIn else {
@@ -10,13 +32,15 @@ extension ToolExecutor {
             throw ToolError("Out of credits. Tell the user to add credits or subscribe to keep generating.")
         }
         switch type {
+        case .sequence:
+            throw ToolError("Cannot generate a sequence. Sequences are timelines.")
         case .video:
-            guard let modelId = args.string("model") ?? VideoModelConfig.allModels.first?.id else {
-                throw ToolError("Model catalog not loaded yet. Try again in a moment.")
-            }
+            let modelId = try args.string("model") ?? defaultModelId(
+                VideoModelConfig.allModels.map { (id: $0.id, paidOnly: $0.paidOnly) }, kind: "video")
             guard let model = VideoModelConfig.allModels.first(where: { $0.id == modelId }) else {
                 throw ToolError("Unknown model '\(modelId)'. Available: \(VideoModelConfig.allModels.map(\.id).joined(separator: ", "))")
             }
+            try requirePlan(for: model.id, paidOnly: model.paidOnly)
             return model.requiresSourceVideo
                 ? try generateVideoEdit(editor, args, prompt: prompt, model: model)
                 : try generateVideoText(editor, args, prompt: prompt, model: model)
@@ -28,6 +52,8 @@ extension ToolExecutor {
             throw ToolError("Text generation is not wired through the generate tool.")
         case .lottie:
             throw ToolError("Lottie animations aren't generated through this tool.")
+        case .adjustment:
+            throw ToolError("Adjustment layers aren't generated through this tool.")
         }
     }
 
@@ -125,7 +151,7 @@ extension ToolExecutor {
             aspectRatio: aspectRatio, resolution: resolution
         )
 
-        let folderId = try resolveFolderId(
+        let folderId = try resolveFolder(
             args, editor: editor, fallbackReferences: inputAssets.textToVideoReferences
         )
         let placeholderId = VideoGenerationSubmission.make(
@@ -151,12 +177,12 @@ extension ToolExecutor {
         _ editor: EditorViewModel, _ args: [String: Any], prompt: String
     ) throws -> ToolResult {
         guard !prompt.isEmpty else { throw ToolError("Empty prompt") }
-        guard let modelId = args.string("model") ?? ImageModelConfig.allModels.first?.id else {
-            throw ToolError("Model catalog not loaded yet. Try again in a moment.")
-        }
+        let modelId = try args.string("model") ?? defaultModelId(
+            ImageModelConfig.allModels.map { (id: $0.id, paidOnly: $0.paidOnly) }, kind: "image")
         guard let model = ImageModelConfig.allModels.first(where: { $0.id == modelId }) else {
             throw ToolError("Unknown model '\(modelId)'. Available: \(ImageModelConfig.allModels.map(\.id).joined(separator: ", "))")
         }
+        try requirePlan(for: model.id, paidOnly: model.paidOnly)
         let aspectRatio = args.string("aspectRatio") ?? model.aspectRatios.first ?? ""
         let resolution = args.string("resolution") ?? model.resolutions?.first
         let quality = args.string("quality") ?? model.qualities?.last
@@ -179,7 +205,7 @@ extension ToolExecutor {
             prompt: prompt, model: modelId, duration: 0,
             aspectRatio: aspectRatio, resolution: resolution, quality: quality
         )
-        let folderId = try resolveFolderId(args, editor: editor, fallbackReferences: refs)
+        let folderId = try resolveFolder(args, editor: editor, fallbackReferences: refs)
         let placeholderId = ImageGenerationSubmission.make(
             genInput: genInput,
             model: model,
@@ -201,12 +227,12 @@ extension ToolExecutor {
         guard AccountService.shared.hasCredits else {
             throw ToolError("Out of credits. Tell the user to add credits or subscribe to keep generating.")
         }
-        guard let modelId = args.string("model") ?? AudioModelConfig.allModels.first?.id else {
-            throw ToolError("Model catalog not loaded yet. Try again in a moment.")
-        }
+        let modelId = try args.string("model") ?? defaultModelId(
+            AudioModelConfig.allModels.map { (id: $0.id, paidOnly: $0.paidOnly) }, kind: "audio")
         guard let model = AudioModelConfig.allModels.first(where: { $0.id == modelId }) else {
             throw ToolError("Unknown model '\(modelId)'. Available: \(AudioModelConfig.allModels.map(\.id).joined(separator: ", "))")
         }
+        try requirePlan(for: model.id, paidOnly: model.paidOnly)
 
         let prompt = (args.string("prompt") ?? "").trimmingCharacters(in: .whitespaces)
         let acceptsVideo = model.inputs.contains(.video)
@@ -235,6 +261,7 @@ extension ToolExecutor {
             }
             let mp4 = try await TimelineRenderer.render(
                 timeline: editor.timeline, resolver: editor.mediaResolver,
+                resolveTimeline: editor.timelineResolver(),
                 missingMediaRefs: editor.missingMediaRefs,
                 startFrame: start, frameCount: end - start,
                 shortSide: 360, includeAudio: false
@@ -277,7 +304,7 @@ extension ToolExecutor {
             instrumental: model.supportsInstrumental ? instrumental : nil
         )
 
-        let folderId = try resolveFolderId(args, editor: editor)
+        let folderId = try resolveFolder(args, editor: editor)
         let submission = AudioGenerationSubmission.make(
             genInput: genInput,
             model: model,
@@ -331,10 +358,11 @@ extension ToolExecutor {
                 let ids = available.map(\.id).joined(separator: ", ")
                 throw ToolError("Model '\(requested)' does not support \(asset.type.rawValue). Available: \(ids)")
             }
+            try requirePlan(for: match.id, paidOnly: match.paidOnly)
             model = match
         } else {
-            guard let first = available.first else {
-                throw ToolError("No upscaler available for \(asset.type.rawValue)")
+            guard let first = available.first(where: { modelAvailable(paidOnly: $0.paidOnly) }) else {
+                throw ToolError("No upscaler available for \(asset.type.rawValue) on the current plan.")
             }
             model = first
         }
@@ -375,16 +403,24 @@ extension ToolExecutor {
         let filter = args.string("type")
         var out: [[String: Any]] = []
         if filter == nil || filter == "video" {
-            out += VideoModelConfig.allModels.map { Self.videoModelInfo($0, includeType: true) }
+            out += VideoModelConfig.allModels
+                .filter { modelAvailable(paidOnly: $0.paidOnly) }
+                .map { Self.videoModelInfo($0, includeType: true) }
         }
         if filter == nil || filter == "image" {
-            out += ImageModelConfig.allModels.map { Self.imageModelInfo($0, includeType: true) }
+            out += ImageModelConfig.allModels
+                .filter { modelAvailable(paidOnly: $0.paidOnly) }
+                .map { Self.imageModelInfo($0, includeType: true) }
         }
         if filter == nil || filter == "audio" {
-            out += AudioModelConfig.allModels.map { Self.audioModelInfo($0) }
+            out += AudioModelConfig.allModels
+                .filter { modelAvailable(paidOnly: $0.paidOnly) }
+                .map { Self.audioModelInfo($0) }
         }
         if filter == nil || filter == "upscale" {
-            out += UpscaleModelConfig.allModels.map { Self.upscaleModelInfo($0) }
+            out += UpscaleModelConfig.allModels
+                .filter { modelAvailable(paidOnly: $0.paidOnly) }
+                .map { Self.upscaleModelInfo($0) }
         }
         let body: [String: Any] = [
             "models": out,

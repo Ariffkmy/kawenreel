@@ -91,6 +91,44 @@ struct CompositionBuildValidationTests {
     }
 }
 
+@Suite("CompositionBuilder.buildVisuals — instructions")
+struct CompositionBuildVisualInstructionTests {
+
+    @Test func textInstructionsPreserveLayerOrderAcrossCaptionBoundaries() {
+        let topA = textClip(id: "top-a", start: 0, duration: 10)
+        let topB = textClip(id: "top-b", start: 10, duration: 10)
+        let bottom = textClip(id: "bottom", start: 0, duration: 20)
+        let timeline = Fixtures.timeline(fps: 10, tracks: [
+            Fixtures.videoTrack(clips: [topA, topB]),
+            Fixtures.videoTrack(clips: [bottom]),
+        ])
+
+        let (_, videoComposition) = CompositionBuilder.buildVisuals(
+            timeline: timeline,
+            trackMappings: [],
+            compositionDuration: CMTime(value: 20, timescale: 10),
+            renderSize: CGSize(width: 320, height: 180)
+        )
+        let instructions = videoComposition.instructions.compactMap { $0 as? CompositorInstruction }
+
+        #expect(instructions.count == 2)
+        #expect(instructions.map { $0.timeRange.start } == [
+            CMTime(value: 0, timescale: 10),
+            CMTime(value: 10, timescale: 10),
+        ])
+        #expect(instructions.map { $0.layers.map(\.clip.id) } == [
+            ["bottom", "top-a"],
+            ["bottom", "top-b"],
+        ])
+    }
+
+    private func textClip(id: String, start: Int, duration: Int) -> Clip {
+        var clip = Fixtures.clip(id: id, mediaRef: "text-\(id)", mediaType: .text, start: start, duration: duration)
+        clip.textContent = id
+        return clip
+    }
+}
+
 // MARK: - build() unreadable-asset resilience
 
 @Suite("CompositionBuilder.build — unreadable assets")
@@ -237,7 +275,10 @@ struct CompositionBuildAudioTrackTests {
         )
     }
 
-    @Test func speedChangedAudioClipsUseDedicatedCompositionTracks() async throws {
+    @Test func mixedSpeedAudioClipsShareOneCompositionTrack() async throws {
+        // One audio queue per composition track: retimed clips must not fan out
+        // into dedicated tracks. insertClip scales each clip immediately after
+        // inserting it, so mixed speeds are safe on a shared track.
         let audioURL = try makeSilentWav(durationSeconds: 4)
         defer { try? FileManager.default.removeItem(at: audioURL) }
 
@@ -255,9 +296,18 @@ struct CompositionBuildAudioTrackTests {
         )
 
         let audioMappings = result.trackMappings.filter { !$0.isVideo }
-        #expect(audioMappings.count == 2)
-        #expect(Set(audioMappings.map(\.compositionTrack.trackID)).count == 2)
-        #expect(Set(audioMappings.compactMap(clipIds)) == [["a1", "a3"], ["speed"]])
+        #expect(audioMappings.count == 1)
+        #expect(audioMappings.first.flatMap(clipIds) == ["a1", "a3", "speed"])
+
+        // The retimed clip occupies exactly [24,48) with 48 source frames scaled in,
+        // and the following clip still lands at [48,72).
+        let track = try #require(audioMappings.first?.compositionTrack)
+        let ts = CMTimeScale(timeline.fps)
+        let mappings = track.segments.filter { !$0.isEmpty }.map(\.timeMapping)
+        #expect(mappings.count == 3)
+        #expect(mappings[1].target == CMTimeRange(start: CMTime(value: 24, timescale: ts), duration: CMTime(value: 24, timescale: ts)))
+        #expect(mappings[1].source.duration == CMTime(value: 48, timescale: ts))
+        #expect(mappings[2].target.start == CMTime(value: 48, timescale: ts))
     }
 
     @Test func fractionalSpeedAudioUsesTruncatedSourceFramesForCompositionInsertion() async throws {

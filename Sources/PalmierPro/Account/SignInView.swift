@@ -215,8 +215,7 @@ final class SignInWindowController: NSWindowController {
         let hosting = NSHostingController(rootView: SignInView().tint(AppTheme.Accent.primary))
         let window = NSWindow(contentViewController: hosting)
         window.title = "Sign In"
-        // No .closable: the gate can't be dismissed while signed out.
-        window.styleMask = [.titled, .fullSizeContentView]
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .darkAqua)
         window.backgroundColor = AppTheme.Background.base.withAlphaComponent(0.4)
@@ -232,8 +231,9 @@ final class SignInWindowController: NSWindowController {
     required init?(coder: NSCoder) { fatalError() }
 }
 
-/// Routes the visible window based on auth state. Owns the gate so launch shows
-/// sign-in until a session is restored or created.
+/// Restores the auth session at launch and dismisses the sign-in window once a
+/// session exists. Sign-in is optional — it unlocks the server-side LLM proxy —
+/// so there is no gate: the app stays fully reachable while signed out.
 @MainActor
 enum AuthCoordinator {
     static func start() {
@@ -244,33 +244,6 @@ enum AuthCoordinator {
     private static func route(signedIn: Bool) {
         if signedIn {
             SignInWindowController.shared.close()
-            // Local mirror short-circuits so returning users never wait on the network.
-            if let uid = SupabaseService.shared.currentUserId?.uuidString,
-               UserProfileStore.localMirror(userId: uid) {
-                HomeWindowController.shared.showWindow(nil)
-                NSApp.activate(ignoringOtherApps: true)
-                Task { await UserProfileStore.shared.load() }
-                return
-            }
-            Task { @MainActor in
-                await UserProfileStore.shared.load()
-                if UserProfileStore.shared.isOnboarded {
-                    HomeWindowController.shared.showWindow(nil)
-                } else {
-                    OnboardingWindowController.shared.showWindow(nil)
-                }
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        } else {
-            // Signed out: show the gate and close every other window so no
-            // feature surface (home, editors, settings) remains reachable.
-            SignInWindowController.shared.showWindow(nil)
-            let gate = SignInWindowController.shared.window
-            for window in NSApp.windows where window !== gate {
-                window.close()
-            }
-            gate?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }

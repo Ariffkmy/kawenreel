@@ -40,11 +40,12 @@ extension ToolExecutor {
         }
         for id in input.clipIds {
             guard let clip = editor.clipFor(id: id) else { throw ToolError("Clip not found: \(id)") }
-            guard clip.mediaType == .video || clip.mediaType == .image else {
-                throw ToolError("Clip \(id) is a \(clip.mediaType.rawValue) clip; apply_effect needs a video or image clip.")
+            guard clip.mediaType == .video || clip.mediaType == .image || clip.mediaType == .adjustment else {
+                throw ToolError("Clip \(id) is a \(clip.mediaType.rawValue) clip; apply_effect needs a video, image, or adjustment clip.")
             }
         }
 
+        let snapshot = timelineSnapshot(editor)
         let actionName = input.clipIds.count == 1 ? "Apply Effect (Agent)" : "Apply Effect ×\(input.clipIds.count) (Agent)"
         withUndoGroup(editor, actionName: actionName) {
             editor.mutateClips(ids: Set(input.clipIds), actionName: actionName) { clip in
@@ -66,9 +67,6 @@ extension ToolExecutor {
                 clip.effects = stack.isEmpty ? nil : stack
             }
         }
-        var summary: [String] = []
-        if !adds.isEmpty { summary.append("set \(adds.map(\.type).joined(separator: ", "))") }
-        if !removes.isEmpty { summary.append("removed \(removes.joined(separator: ", "))") }
-        return .ok("Effects \(summary.joined(separator: "; ")) on \(input.clipIds.count) clip\(input.clipIds.count == 1 ? "" : "s"). Verify with inspect_timeline.")
+        return mutationResult(editor, since: snapshot, touched: input.clipIds)
     }
 }

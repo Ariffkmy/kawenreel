@@ -68,17 +68,18 @@ struct TitleBarTrailingView: View {
             .buttonStyle(.plain)
             .help("How to use Kawenreel")
 
-            Button(action: { FeedbackWindowController.shared.show() }) {
-                Image(systemName: "exclamationmark.bubble")
+            Button(action: { SupportLink.open() }) {
+                Image(systemName: "message")
                     .font(.system(size: AppTheme.FontSize.md))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .frame(width: AppTheme.IconSize.lg, height: AppTheme.IconSize.lg)
                     .hoverHighlight()
             }
             .buttonStyle(.plain)
-            .help("Send feedback")
+            .help("Chat with Kawenreel support")
+            .tourAnchor(.supportButton)
 
-            UpdateBadgeView()
+            UpdateProjectBadge()
 
             Button(action: { editor.showExportDialog = true }) {
                 HStack(spacing: AppTheme.Spacing.xs) {

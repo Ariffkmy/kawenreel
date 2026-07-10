@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Kawenreel</string>
 	<key>CFBundleDocumentTypes</key>
@@ -27,6 +29,16 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.kawenreel.app</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>es</string>
+		<string>fr</string>
+		<string>de</string>
+		<string>ja</string>
+		<string>pt-BR</string>
+		<string>zh-Hans</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>Kawenreel</string>
 	<key>CFBundlePackageType</key>
@@ -55,7 +67,7 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/Ariffkmy/kawenreel/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_YOUR_ED25519_PUBLIC_KEY</string>
+	<string>wZZLu1u93lzp/uaMaNuuxz5wY/3gBggdgIbFNsG4fMI=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

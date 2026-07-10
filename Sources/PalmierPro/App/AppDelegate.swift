@@ -1,5 +1,4 @@
 import AppKit
-import ClerkKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -12,8 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Sparkle updater
         _ = Updater.shared
 
-        // Gate the app behind Supabase sign-in; routes to Home once authenticated.
+        // Restore the Supabase session (no gate — sign-in only unlocks the LLM proxy).
         AuthCoordinator.start()
+
+        if UserProfileStore.shared.isOnboarded {
+            HomeWindowController.shared.showWindow(nil)
+        } else {
+            OnboardingWindowController.shared.showWindow(nil)
+        }
 
         // Warn when connectivity drops; AI/online features require internet.
         NetworkMonitor.shared.start()
@@ -32,48 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            if SupabaseService.shared.isSignedIn {
-                AppState.shared.showHome()
-            } else {
-                SignInWindowController.shared.showWindow(nil)
-            }
+            AppState.shared.showHome()
         }
         return true
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            Task { @MainActor in
-                do {
-                    let handled = try await Clerk.shared.handle(url)
-                    Log.account.notice(
-                        "auth callback \(handled ? "handled" : "ignored") url=\(Self.safeURLDescription(url))",
-                        telemetry: "Auth callback received",
-                        data: ["handled": handled, "url": Self.safeURLDescription(url)]
-                    )
-                } catch {
-                    Log.account.warning(
-                        "auth callback failed url=\(Self.safeURLDescription(url)) error=\(Log.detail(error))",
-                        telemetry: "Auth callback failed",
-                        data: ["error": error.localizedDescription, "url": Self.safeURLDescription(url)]
-                    )
-                }
-            }
-        }
-    }
-
-    private static func safeURLDescription(_ url: URL) -> String {
-        var components = URLComponents()
-        components.scheme = url.scheme
-        components.host = url.host
-        components.path = url.path
-        return components.string ?? url.scheme ?? "unknown"
-    }
-
-    @MainActor
-    @objc func signOut(_ sender: Any?) {
-        Task { await SupabaseService.shared.signOut() }
-    }
 
     @MainActor
     @objc func newProject(_ sender: Any?) {
@@ -106,8 +74,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
+    @objc func showSupport(_ sender: Any?) {
+        SupportLink.open()
+    }
+
+    // Temporary: replay the full first-run flow without a fresh account.
+    @MainActor
+    @objc func previewFirstRun(_ sender: Any?) {
+        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        TourController.resetFirstRun()
+        OnboardingWindowController.shared.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
     @objc func showTutorial(_ sender: Any?) {
         guard let editor = AppState.shared.activeProject?.editorViewModel else { return }
         editor.tour.start(in: editor)
+    }
+
+    @MainActor
+    @objc func signIn(_ sender: Any?) {
+        SignInWindowController.shared.showWindow(nil)
+        SignInWindowController.shared.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @MainActor
+    @objc func signOut(_ sender: Any?) {
+        Task { await SupabaseService.shared.signOut() }
+    }
+
+    @MainActor
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(signIn(_:)): return !SupabaseService.shared.isSignedIn
+        case #selector(signOut(_:)): return SupabaseService.shared.isSignedIn
+        default: return true
+        }
     }
 }

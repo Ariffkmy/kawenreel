@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 enum ExportDestination: String, CaseIterable, Identifiable {
     case video = "Video"
     case timeline = "Timeline"
-    case palmierProject = "Palmier Project"
+    case palmierProject = "Kawenreel Project"
 
     var id: String { rawValue }
 }
@@ -57,10 +57,16 @@ struct ExportView: View {
     @State private var destination: ExportDestination = .video
     @State private var timelineFormat: TimelineExportFormat = .fcpxml
     @State private var fcpxmlVersion: FCPXMLVersion = .default
+    @State private var fcpxmlTarget: FCPXMLTarget = .default
     @State private var codec: VideoCodec = .h264
     @State private var resolution: ExportResolution = .matchTimeline
     @State private var palmierResult: String?
     @State private var palmierSummary: (collect: Int, missing: Int, bytes: Int64) = (0, 0, 0)
+    @State private var selectedTimelineId: String?
+
+    private var exportTimeline: Timeline {
+        selectedTimelineId.flatMap { editor.timeline(for: $0) } ?? editor.timeline
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,6 +79,7 @@ struct ExportView: View {
                 .background(.ultraThinMaterial)
         }
         .task {
+            selectedTimelineId = editor.activeTimelineId
             palmierSummary = computePalmierSummary()
         }
     }
@@ -98,6 +105,20 @@ struct ExportView: View {
                     destinationPicker
 
                     Divider().opacity(AppTheme.Opacity.moderate)
+
+                    if editor.timelines.count > 1, destination != .palmierProject {
+                        settingRow(label: "Timeline") {
+                            Picker("", selection: $selectedTimelineId) {
+                                ForEach(editor.timelines) { timeline in
+                                    Text(timeline.name).tag(timeline.id as String?)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                        }
+
+                        Divider().opacity(AppTheme.Opacity.moderate)
+                    }
 
                     switch destination {
                     case .video:
@@ -125,6 +146,13 @@ struct ExportView: View {
                     Text(error)
                         .font(.system(size: AppTheme.FontSize.xs))
                         .foregroundStyle(AppTheme.Status.errorColor)
+                        .padding(.top, AppTheme.Spacing.sm)
+                }
+
+                if let warning = service.warning {
+                    Text(warning)
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
                         .padding(.top, AppTheme.Spacing.sm)
                 }
 
@@ -190,7 +218,7 @@ struct ExportView: View {
             Divider().opacity(AppTheme.Opacity.moderate)
 
             settingRow(label: "Frame Rate") {
-                Text("\(editor.timeline.fps) fps")
+                Text("\(exportTimeline.fps) fps")
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
             }
         }
@@ -216,6 +244,18 @@ struct ExportView: View {
     private var fcpxmlVersionRow: some View {
         Divider().opacity(AppTheme.Opacity.moderate)
         HStack(spacing: AppTheme.Spacing.sm) {
+            Text("For")
+                .font(.system(size: AppTheme.FontSize.xs))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+            Picker("", selection: $fcpxmlTarget) {
+                ForEach(FCPXMLTarget.allCases) { target in
+                    Text(target.displayName).tag(target)
+                }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .font(.system(size: AppTheme.FontSize.xs))
+            .fixedSize()
             Text("Version")
                 .font(.system(size: AppTheme.FontSize.xs))
                 .foregroundStyle(AppTheme.Text.tertiaryColor)
@@ -257,7 +297,7 @@ struct ExportView: View {
 
     private var bottomBar: some View {
         HStack {
-            let duration = formatTimecode(frame: editor.timeline.totalFrames, fps: editor.timeline.fps)
+            let duration = formatTimecode(frame: exportTimeline.totalFrames, fps: exportTimeline.fps)
             HStack(spacing: AppTheme.Spacing.lg) {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     Image(systemName: "clock")
@@ -269,11 +309,11 @@ struct ExportView: View {
                         Image(systemName: "doc")
                         Text("~\(estimatedFileSize)")
                     }
-                    let out = resolution.renderSize(for: CGSize(width: editor.timeline.width, height: editor.timeline.height))
+                    let out = resolution.renderSize(for: CGSize(width: exportTimeline.width, height: exportTimeline.height))
                     Text("\(Int(out.width))×\(Int(out.height))")
                     Text(codec.containerLabel)
                 case .timeline:
-                    Text("\(editor.timeline.width)×\(editor.timeline.height)")
+                    Text("\(exportTimeline.width)×\(exportTimeline.height)")
                     Text(timelineFormat.extensionLabel)
                 case .palmierProject:
                     HStack(spacing: AppTheme.Spacing.xs) {
@@ -319,7 +359,7 @@ struct ExportView: View {
             destination = option
         } label: {
             HStack(spacing: AppTheme.Spacing.sm) {
-                radioIndicator(selected: selected)
+                RadioIndicator(selected: selected)
 
                 Text(option.rawValue)
                     .font(.system(size: AppTheme.FontSize.md, weight: selected ? AppTheme.FontWeight.semibold : AppTheme.FontWeight.medium))
@@ -333,20 +373,6 @@ struct ExportView: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-    }
-
-    private func radioIndicator(selected: Bool) -> some View {
-        ZStack {
-            Circle()
-                .strokeBorder(selected ? AppTheme.Accent.primary : AppTheme.Text.mutedColor, lineWidth: AppTheme.BorderWidth.thin)
-
-            if selected {
-                Circle()
-                    .fill(AppTheme.Accent.primary)
-                    .padding(AppTheme.Spacing.xs)
-            }
-        }
-        .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
     }
 
     private func timelineFormatButton(_ format: TimelineExportFormat) -> some View {
@@ -404,9 +430,9 @@ struct ExportView: View {
     }
 
     private var estimatedFileSize: String {
-        let seconds = Double(editor.timeline.totalFrames) / Double(max(1, editor.timeline.fps))
+        let seconds = Double(exportTimeline.totalFrames) / Double(max(1, exportTimeline.fps))
         // Bitrate scales with output pixel area, so any resolution (incl. 2K / native) is covered.
-        let out = resolution.renderSize(for: CGSize(width: editor.timeline.width, height: editor.timeline.height))
+        let out = resolution.renderSize(for: CGSize(width: exportTimeline.width, height: exportTimeline.height))
         let megapixels = Double(out.width * out.height) / 1_000_000
         let bytesPerSecPerMP: Double = switch codec {
         case .h264:   0.63e6
@@ -420,12 +446,12 @@ struct ExportView: View {
     private var exportFormat: ExportFormat {
         switch destination {
         case .timeline: timelineFormat.exportFormat
-        case .palmierProject: .xml   // Palmier Project has its own path; never rendered.
+        case .palmierProject: .xml   // Kawenreel Project has its own path; never rendered.
         case .video: codec.exportFormat
         }
     }
 
-    /// Quick estimate for exporting a Palmier Project
+    /// Quick estimate for exporting a Kawenreel Project
     private func computePalmierSummary() -> (collect: Int, missing: Int, bytes: Int64) {
         var collect = 0, missing = 0
         var bytes: Int64 = 0
@@ -456,21 +482,24 @@ struct ExportView: View {
             .mpeg4Movie
         }
         panel.allowedContentTypes = [contentType]
-        panel.nameFieldStringValue = "export.\(format.fileExtension)"
+        panel.nameFieldStringValue = "\(exportTimeline.name).\(format.fileExtension)"
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task {
                 await service.export(
-                    timeline: editor.timeline,
+                    timeline: exportTimeline,
                     resolver: editor.mediaResolver,
+                    resolveTimeline: editor.timelineResolver(),
                     format: format,
                     resolution: resolution,
                     fcpxmlVersion: fcpxmlVersion,
+                    fcpxmlTarget: fcpxmlTarget,
                     missingMediaRefs: editor.missingMediaRefs,
                     outputURL: url
                 )
-                if service.error == nil {
+                // Keep the dialog open on a warning so the user sees what was skipped.
+                if service.error == nil && service.warning == nil {
                     editor.showExportDialog = false
                 }
             }
@@ -488,7 +517,7 @@ struct ExportView: View {
             guard response == .OK, let url = panel.url else { return }
             Task {
                 let report = await service.exportPalmierProject(
-                    timeline: editor.timeline,
+                    projectFile: editor.projectFileSnapshot(),
                     manifest: editor.mediaManifest,
                     generationLog: editor.generationLog,
                     sourceProjectURL: editor.projectURL,

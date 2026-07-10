@@ -28,6 +28,11 @@ enum MainMenuBuilder {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         menu.addItem(.separator())
+        let signInItem = menu.addItem(withTitle: "Sign In…", action: #selector(AppDelegate.signIn(_:)), keyEquivalent: "")
+        signInItem.target = NSApp.delegate
+        let signOutItem = menu.addItem(withTitle: "Sign Out", action: #selector(AppDelegate.signOut(_:)), keyEquivalent: "")
+        signOutItem.target = NSApp.delegate
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Kawenreel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.submenu = menu
         return item
@@ -190,7 +195,11 @@ enum MainMenuBuilder {
         menu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "?")
         menu.addItem(withTitle: "MCP Instructions", action: #selector(AppDelegate.showMCPInstructions(_:)), keyEquivalent: "")
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Kawenreel Support", action: #selector(AppDelegate.showSupport(_:)), keyEquivalent: "")
         menu.addItem(withTitle: "Send Feedback…", action: #selector(AppDelegate.showFeedback(_:)), keyEquivalent: "")
+        menu.addItem(.separator())
+        // Temporary: remove before release.
+        menu.addItem(withTitle: "Preview First Run (Temp)", action: #selector(AppDelegate.previewFirstRun(_:)), keyEquivalent: "")
         item.submenu = menu
         return item
     }

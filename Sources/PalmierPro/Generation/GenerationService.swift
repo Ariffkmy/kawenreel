@@ -304,6 +304,10 @@ final class GenerationService {
         }
     }
 
+    private func backendErrorMessage(_ error: Error) -> String {
+        return error.localizedDescription
+    }
+
     private func updateGenerationMetadata(
         _ asset: MediaAsset,
         editor: EditorViewModel,
@@ -380,6 +384,8 @@ final class GenerationService {
             case .audio: return "audio/mpeg"
             case .text: return "application/octet-stream"
             case .lottie: return "application/json"
+            case .adjustment: return "application/octet-stream"
+            case .sequence: return "video/mp4"
             }
         }
     }
@@ -406,7 +412,7 @@ final class GenerationService {
                 projectId: editor.projectId,
             )
         } catch {
-            let message = error.localizedDescription
+            let message = backendErrorMessage(error)
             Log.generation.error("submit failed model=\(genInput.model) error=\(message)")
             for placeholder in placeholders {
                 updateGenerationMetadata(placeholder, editor: editor, status: .failed(message))

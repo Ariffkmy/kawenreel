@@ -75,20 +75,6 @@ else
   echo "==> SENTRY_DSN not set — telemetry will be a no-op in this build"
 fi
 
-inject_plist() {
-  local key="$1" value="$2"
-  if [ -z "$value" ]; then
-    echo "!! $key not set in $ENV_FILE — app will fatalError on launch" >&2
-    return
-  fi
-  /usr/libexec/PlistBuddy -c "Delete :$key" "$APP/Contents/Info.plist" 2>/dev/null || true
-  /usr/libexec/PlistBuddy -c "Add :$key string $value" "$APP/Contents/Info.plist"
-}
-
-echo "==> Injecting backend config into Info.plist"
-inject_plist PalmierClerkPublishableKey "${CLERK_PUBLISHABLE_KEY:-}"
-inject_plist PalmierConvexDeploymentURL "${CONVEX_DEPLOYMENT_URL:-}"
-inject_plist PalmierConvexHttpURL "${CONVEX_HTTP_URL:-}"
 cp "$RESOURCES/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/Sparkle.framework"
 
@@ -109,6 +95,16 @@ fi
 if [ -d "$RES_BUNDLE/Images" ]; then
   cp -R "$RES_BUNDLE/Images" "$APP/Contents/Resources/"
 fi
+# .lproj folders must live at the bundle root for macOS to resolve them —
+# flatten out of Resources/Localization/ even though that's just an org folder.
+if [ -d "$RES_BUNDLE/Localization" ]; then
+  for locale_dir in "$RES_BUNDLE/Localization"/*.lproj; do
+    [ -d "$locale_dir" ] && cp -R "$locale_dir" "$APP/Contents/Resources/"
+  done
+else
+  echo "!! missing Localization/ in SwiftPM resource bundle at $RES_BUNDLE" >&2
+  exit 1
+fi
 if [ -d "$RES_BUNDLE/Changelog" ]; then
   cp -R "$RES_BUNDLE/Changelog" "$APP/Contents/Resources/"
 else
@@ -121,6 +117,18 @@ if ! ls "$RES_BUNDLE"/*.metallib >/dev/null 2>&1; then
   exit 1
 fi
 cp "$RES_BUNDLE"/*.metallib "$APP/Contents/Resources/"
+
+MLX_METALLIB="$ROOT/.build/$CONFIG/mlx.metallib"
+if [ ! -f "$MLX_METALLIB" ]; then
+  echo "==> Building MLX metallib ($CONFIG)"
+  BUILD_DIR="$ROOT/.build" "$ROOT/.build/checkouts/speech-swift/scripts/build_mlx_metallib.sh" "$CONFIG"
+fi
+if [ ! -f "$MLX_METALLIB" ]; then
+  echo "!! missing $MLX_METALLIB — on-device speech features (VAD, speaker ID) would die silently" >&2
+  exit 1
+fi
+mkdir -p "$APP/Contents/Resources/mlx-swift_Cmlx.bundle"
+cp "$MLX_METALLIB" "$APP/Contents/Resources/mlx-swift_Cmlx.bundle/default.metallib"
 
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/PalmierPro"
 touch "$APP"

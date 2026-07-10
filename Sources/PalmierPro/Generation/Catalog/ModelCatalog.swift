@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-@preconcurrency import ConvexMobile
 
 enum ModelKind: Sendable {
     case video(VideoModelConfig)
@@ -48,22 +47,7 @@ final class ModelCatalog {
         guard !didConfigure else { return }
         didConfigure = true
 
-        guard let client = AccountService.shared.convex else { return }
-
-        subscription = client
-            .subscribe(to: "models:list", yielding: [CatalogEntry].self)
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { [weak self] completion in
-                    if case .failure(let err) = completion {
-                        Log.generation.error("ModelCatalog subscription failed: \(err.localizedDescription)")
-                        self?.lastError = err.localizedDescription
-                    }
-                },
-                receiveValue: { [weak self] entries in
-                    self?.apply(entries)
-                }
-            )
+        // Live catalog refresh returns when the Kawenreel backend ships a models endpoint.
     }
 
     private func apply(_ entries: [CatalogEntry]) {
@@ -122,6 +106,7 @@ struct CatalogEntry: Decodable, Sendable {
     let qualities: [String]?
     let audioPricing: AudioPricing?
     let creditsPerSecondUpscale: Double?
+    let paidOnly: Bool
 
     enum Kind: String, Decodable, Sendable { case video, image, audio, upscale }
     enum ResponseShape: String, Decodable, Sendable {
@@ -163,7 +148,7 @@ struct CatalogEntry: Decodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, displayName, allowedEndpoints, responseShape, uiCapabilities
         case creditsPerSecond, audioDiscountRate, creditsPerImage, qualities
-        case audioPricing, creditsPerSecondUpscale
+        case audioPricing, creditsPerSecondUpscale, paidOnly
     }
 
     init(from decoder: Decoder) throws {
@@ -179,6 +164,7 @@ struct CatalogEntry: Decodable, Sendable {
         self.qualities = try c.decodeIfPresent([String].self, forKey: .qualities)
         self.audioPricing = try c.decodeIfPresent(AudioPricing.self, forKey: .audioPricing)
         self.creditsPerSecondUpscale = try c.decodeIfPresent(Double.self, forKey: .creditsPerSecondUpscale)
+        self.paidOnly = try c.decodeIfPresent(Bool.self, forKey: .paidOnly) ?? false
         switch self.kind {
         case .video:
             self.uiCapabilities = .video(try c.decode(VideoCaps.self, forKey: .uiCapabilities))

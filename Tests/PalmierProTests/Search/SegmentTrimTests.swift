@@ -18,8 +18,11 @@ struct SegmentTrimTests {
 
     @Test func clipDurationFromSegment() {
         let e = editor()
-        #expect(e.clipDurationFrames(for: asset(), segment: nil) == 3000)   // full 100s @ 30fps
+        // No-segment video drops are capped at maxDraggedClipSeconds (4s @ 30fps).
+        #expect(e.clipDurationFrames(for: asset(), segment: nil) == 120)
         #expect(e.clipDurationFrames(for: asset(), segment: 10...14) == 120) // 4s window
+        // An explicit segment is honored as-is, even past the cap.
+        #expect(e.clipDurationFrames(for: asset(), segment: 10...20) == 300)
     }
 
     @Test func placesTrimmedClip() {
@@ -32,13 +35,14 @@ struct SegmentTrimTests {
         #expect(clip?.durationFrames == 120)
     }
 
-    @Test func noSegmentPlacesFullClip() {
+    @Test func noSegmentPlacesCappedClipWithHeadroom() {
         let e = editor()
         let a = asset()
         e.createClips(from: [a], trackIndex: 0, startFrame: 0)
         let clip = e.timeline.tracks[0].clips.first
         #expect(clip?.trimStartFrame == 0)
-        #expect(clip?.durationFrames == 3000)
+        // Capped at 4s; the untrimmed source remains as headroom for extending.
+        #expect(clip?.durationFrames == 120)
     }
 
     /// Fence-post: a segment ending exactly at the asset end trims nothing off

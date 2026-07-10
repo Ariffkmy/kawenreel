@@ -7,7 +7,7 @@ struct AgentPanelView: View {
         AgentStarterPrompt(
             title: "Create me a wedding highlight video",
             systemImage: "sparkles",
-            prompt: "Create a wedding highlight video from the footage and music already in my project. Read the malay-wedding-editing skill first, classify the moments on-device, skip test/junk shots, then cut a cinematic highlight (~3–4 minutes, or the song's length) synced to the music beats. Feature the akad nikah and salam original audio, keep the music ducked under them, grade it warm, and add a simple title. Use what's already imported — don't ask me where the footage or song is."
+            prompt: "Create a wedding highlight video from the footage and music already in my project. Read the malay-wedding-editing skill first, classify the moments on-device, skip test/junk shots, then cut a cinematic highlight lasting 1 minute to 1 minute 20 seconds, synced to the music beats. Start the video with the music already at its climax: analyze_audio_beats returns climaxSeconds/climaxFrame — trim the music clip so playback opens there (or on the downbeat just before it), and put the strongest visual moment over that opening. Feature the akad nikah and salam original audio, keep the music ducked under them, grade it warm, and add a simple title. Use what's already imported — don't ask me where the footage or song is."
         ),
         AgentStarterPrompt(
             title: "Create me a full wedding video",
@@ -289,31 +289,68 @@ struct AgentPanelView: View {
     @ViewBuilder
     private var missingKeyState: some View {
         let account = AccountService.shared
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Button(action: { SettingsWindowController.shared.show(tab: .account) }) {
-                Text(missingKeyPrimaryAction(account: account))
-                    .underline()
-                    .foregroundStyle(AppTheme.Accent.primary)
-            }
-            .buttonStyle(.plain)
+        if editor.agentService.keychainReadBlocked {
+            VStack(spacing: AppTheme.Spacing.xs) {
+                Text("Keychain is blocking the saved API key. Allow access in the Keychain dialog, or re-enter the key.")
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Text("or use")
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-
-            Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
-                Text("your own Anthropic key")
-                    .underline()
-                    .foregroundStyle(AppTheme.Accent.primary)
+                Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
+                    Text("Open API key settings")
+                        .underline()
+                        .foregroundStyle(AppTheme.Accent.primary)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+        } else {
+            VStack(spacing: AppTheme.Spacing.mdLg) {
+                Button {
+                    missingKeyPrimaryAction(account: account)
+                } label: {
+                    Label(missingKeyPrimaryLabel(account: account), systemImage: missingKeyPrimaryIcon(account: account))
+                        .font(.system(size: AppTheme.FontSize.mdLg, weight: .semibold))
+                }
+                .buttonStyle(.capsule(.prominent, size: .regular))
+
+                if !account.isSignedIn {
+                    Text("First-time sign-ups only")
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.mutedColor)
+                }
+
+                Button(action: { SettingsWindowController.shared.show(tab: .agent) }) {
+                    Text("or use your own Anthropic key")
+                        .underline()
+                        .foregroundStyle(AppTheme.Text.secondaryColor)
+                        .padding(.horizontal, AppTheme.Spacing.sm)
+                        .padding(.vertical, AppTheme.Spacing.xxs)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: AppTheme.FontSize.smMd, weight: .medium))
+                .hoverHighlight(cornerRadius: AppTheme.Radius.sm)
+            }
         }
-        .font(.system(size: AppTheme.FontSize.md, weight: .medium))
     }
 
-    private func missingKeyPrimaryAction(account: AccountService) -> String {
-        if !account.isSignedIn { return "Sign in" }
+    private func missingKeyPrimaryLabel(account: AccountService) -> LocalizedStringKey {
+        if !account.isSignedIn { return "Log in for 250 free credits" }
         if !account.isPaid { return "Subscribe" }
         return "Open Settings"
+    }
+
+    private func missingKeyPrimaryIcon(account: AccountService) -> String {
+        if !account.isSignedIn { return "gift.fill" }
+        if !account.isPaid { return "sparkles" }
+        return "gearshape"
+    }
+
+    private func missingKeyPrimaryAction(account: AccountService) {
+        if !account.isSignedIn {
+            Task { await account.signInWithGoogle() }
+        } else {
+            SettingsWindowController.shared.show(tab: .account)
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {

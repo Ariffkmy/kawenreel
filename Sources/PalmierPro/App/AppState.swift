@@ -64,19 +64,7 @@ final class AppState {
         }
     }
 
-    /// Every feature requires a signed-in user. When signed out, surface the
-    /// sign-in window instead of performing the action.
-    @discardableResult
-    func requireSignIn() -> Bool {
-        if SupabaseService.shared.isSignedIn { return true }
-        SignInWindowController.shared.showWindow(nil)
-        SignInWindowController.shared.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        return false
-    }
-
     func showHome() {
-        guard requireSignIn() else { return }
         guard let project = activeProject else {
             HomeWindowController.shared.showWindow(nil)
             return
@@ -106,6 +94,28 @@ final class AppState {
         activeProject = project
         HomeWindowController.shared.window?.orderOut(nil)
         project.showWindows()
+    }
+
+    // Save and close project; switch to next open or show Home. Throws (without closing) if the save fails.
+    func closeProject(_ project: VideoProject) async throws {
+        if let url = project.fileURL { ProjectRegistry.shared.register(url) }
+        if project.isDocumentEdited {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                project.autosave(withImplicitCancellability: false) { error in
+                    if let error { cont.resume(throwing: error) } else { cont.resume() }
+                }
+            }
+        }
+        let wasActive = activeProject === project
+        project.close()
+        if wasActive {
+            activeProject = nil
+            if let next = openProjects.first {
+                showEditor(for: next)
+            } else {
+                HomeWindowController.shared.showWindow(nil)
+            }
+        }
     }
 
     func revealGeneratedAssetFromNotification(assetId: String?, projectURL: URL?) {
@@ -214,7 +224,6 @@ final class AppState {
     }
 
     func openProject(at url: URL, register: Bool = true, options: ProjectOpenOptions = .init()) {
-        guard requireSignIn() else { return }
         Task {
             do {
                 try await openProjectAsync(at: url, register: register, options: options)
@@ -260,7 +269,6 @@ final class AppState {
     }
 
     func openSample(slug: String, startTutorial: Bool, onProgress: @escaping (Double) -> Void = { _ in }) async throws {
-        guard requireSignIn() else { return }
         let options = ProjectOpenOptions(startTutorial: startTutorial)
         if let cached = SampleProjectService.shared.cachedURL(slug: slug) {
             try await openProjectAsync(at: cached, register: false, options: options)
@@ -271,7 +279,6 @@ final class AppState {
     }
 
     func openProjectFromPanel() {
-        guard requireSignIn() else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [Self.projectContentType]
         panel.canChooseDirectories = false

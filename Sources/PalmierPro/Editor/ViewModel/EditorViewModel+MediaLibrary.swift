@@ -3,6 +3,7 @@ import AVFoundation
 
 enum MediaPanelItemKey {
     static let folderPrefix = "folder-"
+    static let timelinePrefix = "timeline-"
 
     static func folder(_ id: String) -> String {
         folderPrefix + id
@@ -11,6 +12,15 @@ enum MediaPanelItemKey {
     static func folderId(from key: String) -> String? {
         guard key.hasPrefix(folderPrefix) else { return nil }
         return String(key.dropFirst(folderPrefix.count))
+    }
+
+    static func timeline(_ id: String) -> String {
+        timelinePrefix + id
+    }
+
+    static func timelineId(from key: String) -> String? {
+        guard key.hasPrefix(timelinePrefix) else { return nil }
+        return String(key.dropFirst(timelinePrefix.count))
     }
 }
 
@@ -141,6 +151,13 @@ extension EditorViewModel {
         payload.split(separator: "\n").compactMap { line in
             guard let id = MediaTab.assetId(fromDragString: String(line)) else { return nil }
             return mediaAssets.first { $0.id == id }
+        }
+    }
+
+    func timelineIdsFromDragPayload(_ payload: String) -> [String] {
+        payload.split(separator: "\n").compactMap { line in
+            guard let id = MediaTab.timelineId(fromDragString: String(line)) else { return nil }
+            return timeline(for: id)?.id
         }
     }
 
@@ -344,6 +361,9 @@ extension EditorViewModel {
     }
 
     func clipDisplayLabel(for clip: Clip) -> String {
+        if clip.mediaType == .adjustment {
+            return "Adjustment Layer"
+        }
         if clip.mediaType == .text {
             let content = clip.textContent ?? ""
             if content.isEmpty { return "Text" }
@@ -354,6 +374,9 @@ extension EditorViewModel {
         }
         if let asset = mediaAssets.first(where: { $0.id == clip.mediaRef }), asset.isGenerating {
             return asset.name
+        }
+        if clip.sourceClipType == .sequence, let nested = timeline(for: clip.mediaRef) {
+            return nested.name
         }
         return mediaResolver.displayName(for: clip.mediaRef)
     }
@@ -393,7 +416,10 @@ extension EditorViewModel {
     }
 
     func isClipMediaOffline(_ clip: Clip) -> Bool {
-        clip.mediaType != .text && isMediaOffline(clip.mediaRef)
+        if clip.sourceClipType == .sequence {
+            return timeline(for: clip.mediaRef) == nil
+        }
+        return clip.mediaType != .text && isMediaOffline(clip.mediaRef)
     }
 
     func isClipMediaGenerating(_ clip: Clip) -> Bool {
@@ -438,6 +464,7 @@ extension EditorViewModel {
     private func mediaPanelSelectedKeys() -> Set<String> {
         var keys = selectedMediaAssetIds
         keys.formUnion(selectedFolderIds.map(MediaPanelItemKey.folder))
+        keys.formUnion(selectedTimelineIds.map(MediaPanelItemKey.timeline))
         return keys
     }
 
@@ -446,6 +473,15 @@ extension EditorViewModel {
             guard folder(id: folderId) != nil else { return }
             mediaPanelScrollTarget = key
             selectedFolderIds = [folderId]
+            selectedMediaAssetIds.removeAll()
+            selectedTimelineIds.removeAll()
+            return
+        }
+        if let timelineId = MediaPanelItemKey.timelineId(from: key) {
+            guard timeline(for: timelineId) != nil else { return }
+            mediaPanelScrollTarget = key
+            selectedTimelineIds = [timelineId]
+            selectedFolderIds.removeAll()
             selectedMediaAssetIds.removeAll()
             return
         }
@@ -573,7 +609,7 @@ extension EditorViewModel {
             mediaVisualCache.generateWaveform(for: asset)
         case .image:
             mediaVisualCache.generateImageThumbnail(for: asset)
-        case .text, .lottie:
+        case .text, .lottie, .adjustment, .sequence:
             break
         }
         refreshPreviewForFinalizedAsset(asset)
@@ -593,8 +629,8 @@ extension EditorViewModel {
     }
 
     private func refreshPreviewForFinalizedAsset(_ asset: MediaAsset) {
-        let usedOnTimeline = timeline.tracks.contains { track in
-            track.clips.contains { $0.mediaRef == asset.id }
+        let usedOnTimeline = ([timeline] + timeline.reachableTimelines(resolve: timeline(for:))).contains { t in
+            t.tracks.contains { $0.clips.contains { $0.mediaRef == asset.id } }
         }
         if usedOnTimeline {
             timelineRenderRevision &+= 1
@@ -625,7 +661,7 @@ extension EditorViewModel {
     /// Batch variant of `addTextClip` for agent flows.
     /// Caller owns undo + track creation.
     @discardableResult
-    func placeTextClips(_ specs: [TextClipSpec]) -> [String] {
+    func placeTextClips(_ specs: [TextClipSpec], clearExistingRegions: Bool = true, refreshVisuals: Bool = true) -> [String] {
         guard !specs.isEmpty else { return [] }
         let canvasW = Double(timeline.width)
         let canvasH = Double(timeline.height)
@@ -639,7 +675,9 @@ extension EditorViewModel {
                 guard timeline.tracks.indices.contains(spec.trackIndex) else { continue }
                 let start = max(0, spec.startFrame)
                 let duration = max(1, spec.durationFrames)
-                clearRegion(trackIndex: spec.trackIndex, start: start, end: start + duration, prune: false)
+                if clearExistingRegions {
+                    clearRegion(trackIndex: spec.trackIndex, start: start, end: start + duration, prune: false)
+                }
 
                 let resolved: Transform
                 if let t = spec.transform {
@@ -673,7 +711,9 @@ extension EditorViewModel {
         for i in Set(specs.map(\.trackIndex)) where timeline.tracks.indices.contains(i) {
             sortClips(trackIndex: i)
         }
-        videoEngine?.refreshVisuals()
+        if refreshVisuals {
+            videoEngine?.refreshVisuals()
+        }
         return createdIds.compactMap { $0 }
     }
 
