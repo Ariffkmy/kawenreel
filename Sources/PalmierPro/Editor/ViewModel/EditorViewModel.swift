@@ -130,6 +130,7 @@ final class EditorViewModel {
     /// Clip ids currently awaiting an AI-generated replacement.
     var pendingReplacements: Set<String> = []
     var cropEditingActive: Bool = false
+    var chromaKeySamplingClipId: String?
     var cropAspectLock: CropAspectLock = .free
     var previewTabs: [PreviewTab] = [.timeline]
     var activePreviewTabId: String = PreviewTab.timeline.id
@@ -351,6 +352,8 @@ final class EditorViewModel {
     /// Preview playback bridge.
     var videoEngine: VideoEngine?
 
+    let audioMeter = AudioMeterHub()
+
     @ObservationIgnored
     let playheadState = PreviewPlayheadState()
 
@@ -421,10 +424,10 @@ final class EditorViewModel {
         videoEngine?.togglePlayback()
     }
 
-    func stepForward() { seekToFrame(currentFrame + 1) }
-    func stepBackward() { seekToFrame(currentFrame - 1) }
-    func skipForward(frames: Int = 5) { seekToFrame(currentFrame + frames) }
-    func skipBackward(frames: Int = 5) { seekToFrame(currentFrame - frames) }
+    func stepForward() { seekToFrame(currentFrame + 1, mode: .audibleStepForward) }
+    func stepBackward() { seekToFrame(currentFrame - 1, mode: .audibleStepBackward) }
+    func skipForward(frames: Int = 5) { seekToFrame(currentFrame + frames, mode: .audibleStepForward) }
+    func skipBackward(frames: Int = 5) { seekToFrame(currentFrame - frames, mode: .audibleStepBackward) }
 
     // MARK: - Shared infrastructure
 
