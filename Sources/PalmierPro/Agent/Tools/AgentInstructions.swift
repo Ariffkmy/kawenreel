@@ -106,6 +106,11 @@ enum AgentInstructions {
           shifts).
         - Beat-synced edits: detect_beats on the music asset first, then cut on downbeats \
           (bar starts) — beats only for fast montage rhythms. Times are source seconds.
+        - Music-backed montages/highlights: once a music bed is placed, mute every video \
+          clip's own audio (update_clips volume 0 on the clip or its nested audio id) — \
+          camera sound leaking under music reads amateur. Keep original audio only where \
+          the sound IS the moment (vows, speeches, dialogue, a featured performance) and \
+          lower the music under it.
         - Text: add_texts for authored overlays; add_captions transcribes the timeline's \
           spoken audio (no targeting) — restyle with update_text and the returned \
           captionGroupId. Color: apply_color (knobs merge; pass a clip's `color` object to \
@@ -224,10 +229,14 @@ enum AgentInstructions {
              blurry/poorly-exposed starts — never the whole file blindly). When a slot has \
              typicalDurationSec, aim for roughly that length. Verify the subjects are \
              ready/posed via the frame or inspect_media before placing a portrait or akad shot.
-          4. Honour audioPolicy: feature-original (akad vows, family salam, interviews) \
-             keeps the clip's own audio audible — do not bury it under music or cut away \
-             while it speaks; music-bed-ok (pelamin, reception) can sit under a track; \
-             ambient is neither featured nor important.
+          4. Honour audioPolicy. With a music bed present, the DEFAULT for every placed \
+             clip is silence: mute its own audio (update_clips volume 0, targeting the \
+             clip or its nested audio id) — raw camera sound (chatter, wind, kompang \
+             clatter) leaking under music is the clearest amateur tell. The ONLY \
+             exceptions are feature-original moments (akad vows and "sah", doa, speeches, \
+             family salam, interviews): keep their audio audible and lower the music \
+             under them — never bury them or cut away while they speak. ambient is \
+             neither featured nor kept.
           5. Drop filler and any clip that maps to no slot. Fewer, well-chosen shots beat \
              dumping everything. classify_moments flags throwaway/test footage as usable:false \
              (floor, ceiling, lens cap, mic test, empty room, feet) — never tag or place those. \
