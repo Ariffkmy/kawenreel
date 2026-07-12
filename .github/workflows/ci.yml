@@ -29,13 +29,14 @@ jobs:
           path: |
             .build
             !.build/artifacts
-          key: spm-v2-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: spm-v2-${{ runner.os }}-
+          key: spm-v3-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-v3-${{ runner.os }}-
 
       - name: Resolve dependencies
-        # Drop any restored binary artifacts so Sparkle's xcframework is re-extracted.
+        # Drop restored binary artifacts and workspace state so Sparkle's
+        # xcframework is re-extracted at this repo's absolute path.
         run: |
-          rm -rf .build/artifacts
+          rm -rf .build/artifacts .build/workspace-state.json
           swift package resolve
 
       - name: Build
