@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import Foundation
+import Vision
 
 extension ToolExecutor {
     private static let analyzeFootageQualityAllowedKeys: Set<String> = [
@@ -23,7 +24,6 @@ extension ToolExecutor {
         guard end > start else {
             throw ToolError("analyze_footage_quality: endSeconds must be greater than startSeconds.")
         }
-        let sampleFPS = min(max(args.double("sampleFPS") ?? 4, 1), 8)
         let windowSeconds = min(max(args.double("windowSeconds") ?? 2, 0.75), 6)
 
         let mapping = try clipMapping(editor: editor, mediaRef: asset.id, clipId: args.string("clipId"))
@@ -31,7 +31,6 @@ extension ToolExecutor {
             url: asset.url,
             start: start,
             end: end,
-            sampleFPS: sampleFPS,
             windowSeconds: windowSeconds,
             fps: editor.timeline.fps,
             clip: mapping
@@ -41,7 +40,6 @@ extension ToolExecutor {
         payload["mediaRef"] = asset.id
         payload["name"] = asset.name
         payload["durationSeconds"] = asset.duration
-        payload["sampleFPS"] = sampleFPS
         payload["windowSeconds"] = windowSeconds
         if let mapping {
             payload["timelineMapping"] = Self.timelineMappingMeta(clip: mapping, fps: editor.timeline.fps)
@@ -92,21 +90,29 @@ enum FootageExposure {
 }
 
 private enum FootageQualityAnalyzer {
+    private static let planeWidth = 32
+    private static let planeHeight = 18
+    private static let burstSeconds = 0.6
+    private static let maxBurstFrames = 36
+    private static let maxWindows = 200
+
     private struct SharpnessThresholds {
         let blurry: Double
         let clear: Double
     }
 
-    private struct FrameMetric {
+    private struct FrameSample {
         let time: Double
         let sharpness: Double
         let luma: [Float]
-        let motion: Motion?
+        let velocity: Velocity?
     }
 
-    private struct Motion {
-        let dx: Int
-        let dy: Int
+    /// Frame-to-frame motion. vx/vy/magnitude are fractions of frame width per second;
+    /// residual/visualChange are mean luma change per second (0–1).
+    private struct Velocity {
+        let vx: Double
+        let vy: Double
         let magnitude: Double
         let residual: Double
         let visualChange: Double
@@ -116,18 +122,40 @@ private enum FootageQualityAnalyzer {
         url: URL,
         start: Double,
         end: Double,
-        sampleFPS: Double,
         windowSeconds: Double,
         fps: Int,
         clip: Clip?
     ) async throws -> [String: Any] {
-        let frames = try await sampleFrames(url: url, start: start, end: end, sampleFPS: sampleFPS)
-        guard frames.count >= 2 else {
+        let asset = AVURLAsset(url: url)
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+            throw ToolError("analyze_footage_quality: no video track available.")
+        }
+        let naturalSize = (try? await track.load(.naturalSize)) ?? .zero
+
+        let effectiveWindow = max(windowSeconds, (end - start) / Double(maxWindows))
+        var bursts: [(start: Double, end: Double, frames: [FrameSample])] = []
+        var cursor = start
+        while cursor < end - 0.05 {
+            try Task.checkCancellation()
+            let windowEnd = min(cursor + effectiveWindow, end)
+            let frames = decodeBurst(
+                asset: asset, track: track, naturalSize: naturalSize,
+                windowStart: cursor, windowEnd: windowEnd
+            )
+            if frames.count >= 2 {
+                bursts.append((cursor, windowEnd, frames))
+            }
+            cursor = windowEnd
+            await Task.yield()
+        }
+        guard !bursts.isEmpty else {
             throw ToolError("analyze_footage_quality: not enough frames decoded for analysis.")
         }
 
-        let thresholds = sharpnessThresholds(frames)
-        let windows = makeWindows(frames: frames, windowSeconds: windowSeconds, fps: fps, clip: clip, thresholds: thresholds)
+        let thresholds = sharpnessThresholds(bursts.flatMap(\.frames))
+        let windows = bursts
+            .map { scoreWindow($0.frames, start: $0.start, end: $0.end, fps: fps, clip: clip, thresholds: thresholds) }
+            .sorted { (($0["qualityScore"] as? Double) ?? 0) > (($1["qualityScore"] as? Double) ?? 0) }
         let best = windows
             .filter {
                 (($0["isUsable"] as? Bool) ?? false)
@@ -141,6 +169,7 @@ private enum FootageQualityAnalyzer {
                     "endSeconds": window["endSeconds"] ?? 0,
                     "qualityScore": window["qualityScore"] ?? 0,
                     "stability": window["stability"] ?? "unknown",
+                    "stabilityScore": window["stabilityScore"] ?? 0,
                     "clarity": window["clarity"] ?? "unknown",
                 ]
                 if let a = window["projectStartFrame"] { out["projectStartFrame"] = a }
@@ -150,12 +179,14 @@ private enum FootageQualityAnalyzer {
 
         return [
             "timeRange": [start, end],
-            "frameCount": frames.count,
+            "frameCount": bursts.reduce(0) { $0 + $1.frames.count },
             "metricNotes": [
+                "each window is measured from a burst of consecutive native-fps frames with sub-pixel registration",
+                "units: motion/jitter/peakJitter are fractions of frame width per second; visualChange/residual are mean luma change per second",
                 "sharpness: normalized edge detail; low values usually mean blur or missed focus",
                 "clarity: clear windows are eligible for bestRanges; blurry and soft windows are excluded",
-                "motion: estimated global frame-to-frame translation",
-                "jitter: erratic motion after translation matching; high values usually mean shaky handheld footage",
+                "motion: global frame-to-frame translation speed (camera pan/subject drift)",
+                "jitter: mean deviation of frame-to-frame motion from the window's mean; peakJitter is the worst single kick — high values mean shaky handheld footage",
                 "visualChange: residual luma change; high values can mean subject motion, lighting change, or a cut",
                 "exposure: underexposed/overexposed from mean brightness + shadow/highlight clipping; gradeable via apply_color, so it flags but doesn't exclude from bestRanges",
             ],
@@ -168,89 +199,167 @@ private enum FootageQualityAnalyzer {
         ]
     }
 
-    private static func sampleFrames(url: URL, start: Double, end: Double, sampleFPS: Double) async throws -> [FrameMetric] {
-        let asset = AVURLAsset(url: url)
-        guard (try? await asset.loadTracks(withMediaType: .video).first) != nil else {
-            throw ToolError("analyze_footage_quality: no video track available.")
+    /// Decodes a short run of consecutive frames centered in the window. Consecutive
+    /// native-fps frames are what makes 4–12 Hz handheld shake visible; sparse sampling aliases it.
+    private static func decodeBurst(
+        asset: AVURLAsset,
+        track: AVAssetTrack,
+        naturalSize: CGSize,
+        windowStart: Double,
+        windowEnd: Double
+    ) -> [FrameSample] {
+        let duration = min(burstSeconds, windowEnd - windowStart)
+        let burstStart = windowStart + max(0, (windowEnd - windowStart - duration) / 2)
+
+        guard let reader = try? AVAssetReader(asset: asset) else { return [] }
+        reader.timeRange = CMTimeRange(
+            start: CMTime(seconds: burstStart, preferredTimescale: 600),
+            duration: CMTime(seconds: duration, preferredTimescale: 600)
+        )
+        var settings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        let maxDim = max(naturalSize.width, naturalSize.height)
+        if maxDim > 960 {
+            let scale = 960 / maxDim
+            settings[kCVPixelBufferWidthKey as String] = Int(naturalSize.width * scale / 2) * 2
+            settings[kCVPixelBufferHeightKey as String] = Int(naturalSize.height * scale / 2) * 2
         }
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { return [] }
+        reader.add(output)
+        guard reader.startReading() else { return [] }
+        defer { reader.cancelReading() }
 
-        let interval = 1 / sampleFPS
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 384, height: 384)
-        let tolerance = CMTime(seconds: interval / 2, preferredTimescale: 600)
-        generator.requestedTimeToleranceBefore = tolerance
-        generator.requestedTimeToleranceAfter = tolerance
-
-        let times = stride(from: start, to: end, by: interval)
-            .map { CMTime(seconds: $0, preferredTimescale: 600) }
-        var frames: [FrameMetric] = []
-        var lastLuma: [Float]?
-        var lastTime = -Double.infinity
-
-        for await result in generator.images(for: times) {
-            guard case .success(_, let image, let actualTime) = result else { continue }
-            let time = actualTime.seconds
-            guard time > lastTime else { continue }
-            lastTime = time
-            guard let luma = LumaPlane.compute(image, width: 32, height: 18) else { continue }
-            let sharpness = LumaPlane.sharpness(luma, width: 32, height: 18)
-            let motion = lastLuma.map { estimateMotion(from: $0, to: luma, width: 32, height: 18) }
-            frames.append(FrameMetric(time: time, sharpness: sharpness, luma: luma, motion: motion))
-            lastLuma = luma
+        var frames: [FrameSample] = []
+        var previous: (buffer: CVPixelBuffer, luma: [Float], time: Double)?
+        while frames.count < maxBurstFrames, let sample = output.copyNextSampleBuffer() {
+            guard let buffer = CMSampleBufferGetImageBuffer(sample) else { continue }
+            let time = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+            guard let luma = lumaPlane(buffer) else { continue }
+            let sharpness = LumaPlane.sharpness(luma, width: planeWidth, height: planeHeight)
+            var velocity: Velocity?
+            if let prev = previous, time - prev.time > 0.001 {
+                velocity = measureVelocity(
+                    from: prev.buffer, prevLuma: prev.luma,
+                    to: buffer, luma: luma,
+                    dt: time - prev.time
+                )
+            }
+            frames.append(FrameSample(time: time, sharpness: sharpness, luma: luma, velocity: velocity))
+            previous = (buffer, luma, time)
         }
         return frames
     }
 
-    private static func makeWindows(
-        frames: [FrameMetric],
-        windowSeconds: Double,
-        fps: Int,
-        clip: Clip?,
-        thresholds: SharpnessThresholds
-    ) -> [[String: Any]] {
-        let first = frames.first?.time ?? 0
-        let last = frames.last?.time ?? first
-        var windows: [[String: Any]] = []
-        var start = first
+    /// Sub-pixel translation via Vision registration, with a coarse grid search fallback
+    /// on low-texture frames where registration fails.
+    private static func measureVelocity(
+        from prev: CVPixelBuffer,
+        prevLuma: [Float],
+        to current: CVPixelBuffer,
+        luma: [Float],
+        dt: Double
+    ) -> Velocity {
+        let width = Double(CVPixelBufferGetWidth(prev))
+        var txFrac: Double
+        var tyFrac: Double
 
-        while start < last {
-            let end = min(start + windowSeconds, last)
-            let slice = frames.filter { $0.time >= start && $0.time <= end }
-            if slice.count >= 2 {
-                windows.append(scoreWindow(slice, start: start, end: end, fps: fps, clip: clip, thresholds: thresholds))
+        let request = VNTranslationalImageRegistrationRequest(targetedCVPixelBuffer: current)
+        let handler = VNImageRequestHandler(cvPixelBuffer: prev)
+        if (try? handler.perform([request])) != nil,
+           let observation = request.results?.first {
+            let t = observation.alignmentTransform
+            txFrac = Double(t.tx) / width
+            tyFrac = Double(t.ty) / width
+        } else {
+            let shift = gridSearchShift(prevLuma, luma)
+            txFrac = Double(shift.dx) / Double(planeWidth)
+            tyFrac = Double(shift.dy) / Double(planeWidth)
+        }
+
+        let cellDX = Int((txFrac * Double(planeWidth)).rounded())
+        let cellDY = Int((tyFrac * Double(planeWidth)).rounded())
+        let aligned = shiftedMeanDiff(prevLuma, luma, dx: cellDX, dy: cellDY)
+        let raw = LumaPlane.meanDiff(prevLuma, luma)
+
+        let vx = txFrac / dt
+        let vy = tyFrac / dt
+        return Velocity(
+            vx: vx,
+            vy: vy,
+            magnitude: (vx * vx + vy * vy).squareRoot(),
+            residual: Double(aligned) / 255 / dt,
+            visualChange: Double(raw) / 255 / dt
+        )
+    }
+
+    private static func gridSearchShift(_ a: [Float], _ b: [Float]) -> (dx: Int, dy: Int) {
+        var bestDX = 0
+        var bestDY = 0
+        var best = Float.greatestFiniteMagnitude
+        for dy in -2...2 {
+            for dx in -2...2 {
+                let diff = shiftedMeanDiff(a, b, dx: dx, dy: dy)
+                if diff < best {
+                    best = diff
+                    bestDX = dx
+                    bestDY = dy
+                }
             }
-            start = end
         }
-        return windows.sorted {
-            (($0["qualityScore"] as? Double) ?? 0) > (($1["qualityScore"] as? Double) ?? 0)
+        return (bestDX, bestDY)
+    }
+
+    private static func shiftedMeanDiff(_ a: [Float], _ b: [Float], dx: Int, dy: Int) -> Float {
+        var diff: Float = 0
+        var count: Float = 0
+        for y in 0..<planeHeight {
+            let by = y + dy
+            guard by >= 0 && by < planeHeight else { continue }
+            for x in 0..<planeWidth {
+                let bx = x + dx
+                guard bx >= 0 && bx < planeWidth else { continue }
+                diff += abs(a[y * planeWidth + x] - b[by * planeWidth + bx])
+                count += 1
+            }
         }
+        return count > 0 ? diff / count : .greatestFiniteMagnitude
     }
 
     private static func scoreWindow(
-        _ frames: [FrameMetric],
+        _ frames: [FrameSample],
         start: Double,
         end: Double,
         fps: Int,
         clip: Clip?,
         thresholds: SharpnessThresholds
     ) -> [String: Any] {
-        let motions = frames.compactMap(\.motion)
+        let velocities = frames.compactMap(\.velocity)
         let sharpness = frames.map(\.sharpness).average
-        let motion = motions.map(\.magnitude).average
-        let residual = motions.map(\.residual).average
-        let visualChange = motions.map(\.visualChange).average
-        let jitter = motionJitter(motions)
-        let stabilityScore = clamp01(1 - jitter * 1.6 - residual * 0.9)
-        let staticPenalty = visualChange < 0.015 && motion < 0.05 ? 0.08 : 0
-        let highMotionPenalty = motion > 0.6 ? min((motion - 0.6) * 0.25, 0.15) : 0
+        let motion = velocities.map(\.magnitude).average
+        let residual = velocities.map(\.residual).average
+        let visualChange = velocities.map(\.visualChange).average
+
+        let meanVX = velocities.map(\.vx).average
+        let meanVY = velocities.map(\.vy).average
+        let deviations = velocities.map {
+            (($0.vx - meanVX) * ($0.vx - meanVX) + ($0.vy - meanVY) * ($0.vy - meanVY)).squareRoot()
+        }
+        let jitter = deviations.average
+        let peakJitter = deviations.max() ?? 0
+
+        let stabilityScore = clamp01(1 - jitter * 8 - max(0, peakJitter - 0.35) * 0.6)
+        let staticPenalty = visualChange < 0.05 && motion < 0.02 ? 0.08 : 0
+        let highMotionPenalty = motion > 1.0 ? min((motion - 1.0) * 0.15, 0.15) : 0
         let clarity = clarityLabel(sharpness: sharpness, thresholds: thresholds)
         let exposure = exposureMetrics(frames)
         let blurPenalty: Double = clarity == "clear" ? 0 : (clarity == "soft" ? 0.22 : 0.45)
         let quality = clamp01(
             sharpness * 0.45
                 + stabilityScore * 0.45
-                + min(visualChange * 3, 1) * 0.1
+                + min(visualChange * 0.75, 1) * 0.1
                 - staticPenalty
                 - highMotionPenalty
                 - blurPenalty
@@ -261,9 +370,9 @@ private enum FootageQualityAnalyzer {
         if stability == "shaky" { issues.append("shaky") }
         if clarity == "blurry" { issues.append("blurry") }
         if clarity == "soft" { issues.append("soft focus") }
-        if visualChange < 0.015 && motion < 0.05 { issues.append("static") }
-        if motion > 0.65 { issues.append("high motion") }
-        if residual > 0.22 { issues.append("large visual change") }
+        if visualChange < 0.05 && motion < 0.02 { issues.append("static") }
+        if motion > 1.1 { issues.append("high motion") }
+        if residual > 0.9 { issues.append("large visual change") }
         if exposure.label != "ok" { issues.append(exposure.label) }
         let isUsable = clarity == "clear" && stability != "shaky"
 
@@ -278,6 +387,7 @@ private enum FootageQualityAnalyzer {
             "sharpness": sharpness,
             "motion": motion,
             "jitter": jitter,
+            "peakJitter": peakJitter,
             "visualChange": visualChange,
             "exposure": exposure.label,
             "meanLuma": exposure.mean,
@@ -293,7 +403,7 @@ private enum FootageQualityAnalyzer {
         return out
     }
 
-    private static func sharpnessThresholds(_ frames: [FrameMetric]) -> SharpnessThresholds {
+    private static func sharpnessThresholds(_ frames: [FrameSample]) -> SharpnessThresholds {
         let values = frames.map(\.sharpness).sorted()
         let high = percentile(values, 0.9)
         let clear = max(0.34, high * 0.68)
@@ -314,60 +424,13 @@ private enum FootageQualityAnalyzer {
     }
 
     /// Mean brightness (0–255) plus shadow/highlight clipping fractions over the window's frames.
-    private static func exposureMetrics(_ frames: [FrameMetric]) -> (label: String, mean: Double, shadow: Double, highlight: Double) {
+    private static func exposureMetrics(_ frames: [FrameSample]) -> (label: String, mean: Double, shadow: Double, highlight: Double) {
         FootageExposure.classify(planes: frames.map(\.luma).filter { !$0.isEmpty })
     }
 
-    private static func estimateMotion(from a: [Float], to b: [Float], width: Int, height: Int) -> Motion {
-        var bestDX = 0
-        var bestDY = 0
-        var best = Float.greatestFiniteMagnitude
-        for dy in -2...2 {
-            for dx in -2...2 {
-                let diff = shiftedMeanDiff(a, b, width: width, height: height, dx: dx, dy: dy)
-                if diff < best {
-                    best = diff
-                    bestDX = dx
-                    bestDY = dy
-                }
-            }
-        }
-        let raw = LumaPlane.meanDiff(a, b) / 255
-        let residual = Double(best / 255)
-        let magnitude = sqrt(Double(bestDX * bestDX + bestDY * bestDY)) / sqrt(8)
-        return Motion(dx: bestDX, dy: bestDY, magnitude: magnitude, residual: residual, visualChange: Double(raw))
-    }
-
-    private static func shiftedMeanDiff(_ a: [Float], _ b: [Float], width: Int, height: Int, dx: Int, dy: Int) -> Float {
-        var diff: Float = 0
-        var count: Float = 0
-        for y in 0..<height {
-            let by = y + dy
-            guard by >= 0 && by < height else { continue }
-            for x in 0..<width {
-                let bx = x + dx
-                guard bx >= 0 && bx < width else { continue }
-                diff += abs(a[y * width + x] - b[by * width + bx])
-                count += 1
-            }
-        }
-        return count > 0 ? diff / count : .greatestFiniteMagnitude
-    }
-
-    private static func motionJitter(_ motions: [Motion]) -> Double {
-        guard motions.count >= 3 else { return motions.map(\.magnitude).average * 0.5 }
-        var changes: [Double] = []
-        for i in 1..<motions.count {
-            let dx = Double(motions[i].dx - motions[i - 1].dx)
-            let dy = Double(motions[i].dy - motions[i - 1].dy)
-            changes.append(sqrt(dx * dx + dy * dy) / sqrt(32))
-        }
-        return changes.average
-    }
-
     private static func stabilityLabel(stabilityScore: Double, jitter: Double, motion: Double) -> String {
-        if stabilityScore < 0.45 || jitter > 0.45 { return "shaky" }
-        if motion > 0.45 { return "moving" }
+        if stabilityScore < 0.45 || jitter > 0.09 { return "shaky" }
+        if motion > 0.35 { return "moving" }
         if stabilityScore > 0.75 { return "stable" }
         return "usable"
     }
@@ -386,30 +449,43 @@ private enum FootageQualityAnalyzer {
         return (Int(timelineStart.rounded()), Int(timelineEnd.rounded()))
     }
 
+    /// Box-averaged 32×18 luma from the decoded buffer's Y plane (full-range, 0–255).
+    private static func lumaPlane(_ buffer: CVPixelBuffer) -> [Float]? {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
+        let srcWidth = CVPixelBufferGetWidthOfPlane(buffer, 0)
+        let srcHeight = CVPixelBufferGetHeightOfPlane(buffer, 0)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        guard srcWidth >= planeWidth, srcHeight >= planeHeight else { return nil }
+        let src = base.assumingMemoryBound(to: UInt8.self)
+
+        var out = [Float](repeating: 0, count: planeWidth * planeHeight)
+        for cy in 0..<planeHeight {
+            let y0 = cy * srcHeight / planeHeight
+            let y1 = max(y0 + 1, (cy + 1) * srcHeight / planeHeight)
+            for cx in 0..<planeWidth {
+                let x0 = cx * srcWidth / planeWidth
+                let x1 = max(x0 + 1, (cx + 1) * srcWidth / planeWidth)
+                var sum = 0
+                for y in y0..<y1 {
+                    let row = src + y * stride
+                    for x in x0..<x1 {
+                        sum += Int(row[x])
+                    }
+                }
+                out[cy * planeWidth + cx] = Float(sum) / Float((y1 - y0) * (x1 - x0))
+            }
+        }
+        return out
+    }
+
     private static func clamp01(_ value: Double) -> Double {
         min(max(value, 0), 1)
     }
 }
 
 private enum LumaPlane {
-    static func compute(_ image: CGImage, width: Int, height: Int) -> [Float]? {
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        guard let ctx = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        ctx.interpolationQuality = .high
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return (0..<width * height).map { i in
-            Float(pixels[i * 4]) * 0.299 + Float(pixels[i * 4 + 1]) * 0.587 + Float(pixels[i * 4 + 2]) * 0.114
-        }
-    }
-
     static func sharpness(_ luma: [Float], width: Int, height: Int) -> Double {
         guard width > 2, height > 2 else { return 0 }
         var total: Float = 0

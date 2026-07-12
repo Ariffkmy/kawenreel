@@ -142,6 +142,12 @@ enum OpenAICompatibleError: LocalizedError {
 struct OpenAICompatibleClient: AgentClient {
     let config: OpenAICompatibleConfig
 
+    static let requestTimeout: TimeInterval = 180
+
+    private final class StreamProgress {
+        var receivedResponse = false
+    }
+
     func stream(
         system: String,
         tools: [AnthropicToolSchema],
@@ -149,11 +155,30 @@ struct OpenAICompatibleClient: AgentClient {
     ) -> AsyncThrowingStream<AnthropicStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                do {
-                    try await run(system: system, tools: tools, messages: messages, continuation: continuation)
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+                var retried = false
+                while true {
+                    let progress = StreamProgress()
+                    do {
+                        try await run(system: system, tools: tools, messages: messages,
+                                      continuation: continuation, progress: progress)
+                        continuation.finish()
+                        return
+                    } catch {
+                        // Retry once when the request died before any response arrived.
+                        let timedOut = (error as? URLError)?.code == .timedOut
+                        if timedOut, !progress.receivedResponse, !retried, !Task.isCancelled {
+                            retried = true
+                            Log.agent.error("openrouter timed out before first byte, retrying model=\(config.model)")
+                            continue
+                        }
+                        Log.agent.error(
+                            "openrouter stream failed model=\(config.model): \(error.localizedDescription)",
+                            telemetry: "Agent stream failed",
+                            data: ["model": config.model, "error": error.localizedDescription]
+                        )
+                        continuation.finish(throwing: error)
+                        return
+                    }
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -164,12 +189,14 @@ struct OpenAICompatibleClient: AgentClient {
         system: String,
         tools: [AnthropicToolSchema],
         messages: [AnthropicMessage],
-        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation
+        continuation: AsyncThrowingStream<AnthropicStreamEvent, Error>.Continuation,
+        progress: StreamProgress
     ) async throws {
         guard !config.apiKey.isEmpty else { throw OpenAICompatibleError.missingAPIKey }
 
         var request = URLRequest(url: config.baseURL.appendingPathComponent("chat/completions"))
         request.httpMethod = "POST"
+        request.timeoutInterval = Self.requestTimeout
         request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue("text/event-stream", forHTTPHeaderField: "accept")
@@ -189,6 +216,7 @@ struct OpenAICompatibleClient: AgentClient {
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        progress.receivedResponse = true
         if let http = response as? HTTPURLResponse, http.statusCode >= 400 {
             var errorBody = ""
             for try await line in bytes.lines { errorBody += line + "\n" }

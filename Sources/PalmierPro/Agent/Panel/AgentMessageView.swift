@@ -45,23 +45,42 @@ struct AgentMessageView: View {
             return nil
         }
         if !texts.isEmpty {
-            HStack {
-                Spacer(minLength: 48)
-                Text(texts.joined(separator: "\n"))
-                    .font(.body)
-                    .foregroundStyle(AppTheme.Text.primaryColor)
-                    .lineSpacing(3)
-                    .padding(.horizontal, AppTheme.Spacing.lg)
-                    .padding(.vertical, AppTheme.Spacing.smMd)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
-                            .fill(Color.white.opacity(AppTheme.Opacity.faint))
-                    )
-                    .textSelection(.enabled)
+            VStack(alignment: .trailing, spacing: AppTheme.Spacing.xs) {
+                HStack {
+                    Spacer(minLength: 48)
+                    Text(texts.joined(separator: "\n"))
+                        .font(.body)
+                        .foregroundStyle(AppTheme.Text.primaryColor)
+                        .lineSpacing(3)
+                        .padding(.horizontal, AppTheme.Spacing.lg)
+                        .padding(.vertical, AppTheme.Spacing.smMd)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                                .fill(Color.white.opacity(AppTheme.Opacity.faint))
+                        )
+                        .textSelection(.enabled)
+                }
+                timestampView
             }
         }
         // Tool-result user messages render merged into the preceding assistant row.
     }
+
+    @ViewBuilder
+    private var timestampView: some View {
+        if let date = message.timestamp {
+            Text(Self.timestampFormatter.string(from: date))
+                .font(.system(size: AppTheme.FontSize.xxs))
+                .foregroundStyle(AppTheme.Text.mutedColor)
+        }
+    }
+
+    private static let timestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 
     @ViewBuilder
     private var assistantBody: some View {
@@ -78,8 +97,11 @@ struct AgentMessageView: View {
                 }
             }
             if !copyableText.isEmpty {
-                CopyMessageButton(text: copyableText)
-                    .opacity(isHovering ? 1 : 0)
+                HStack(spacing: AppTheme.Spacing.md) {
+                    CopyMessageButton(text: copyableText)
+                        .opacity(isHovering ? 1 : 0)
+                    timestampView
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

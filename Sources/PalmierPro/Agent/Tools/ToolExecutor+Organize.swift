@@ -20,7 +20,10 @@ extension ToolExecutor {
     /// Strict resolve; throws with the current folder list when the path doesn't match.
     func folderId(atPath path: String, editor: EditorViewModel) throws -> String {
         guard let id = try resolveFolderSegments(path, editor: editor) else {
-            throw ToolError("Folder not found: '\(path)'. Folders: \(folderListForError(editor))")
+            throw ToolError(
+                "Folder not found: '\(path)'. Folders: \(folderListForError(editor)). "
+                + "The user likely didn't mean a folder — call get_media without a folder to list every asset, including ones outside any folder."
+            )
         }
         return id
     }

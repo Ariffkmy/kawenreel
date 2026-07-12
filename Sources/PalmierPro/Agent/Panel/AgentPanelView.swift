@@ -59,6 +59,7 @@ struct AgentPanelView: View {
                 }
                 newTabButton
                 historyButton
+                exportChatButton
                 ViewSkillsButton()
             }
             .padding(.horizontal, AppTheme.Spacing.sm)
@@ -87,6 +88,40 @@ struct AgentPanelView: View {
 
     @State private var showHistory = false
     @State private var isScrolledFromBottom = false
+
+    private var exportChatButton: some View {
+        Button { exportCurrentChat() } label: {
+            Image(systemName: "square.and.arrow.down")
+                .font(.system(size: AppTheme.FontSize.sm, weight: .medium))
+                .foregroundStyle(AppTheme.Text.tertiaryColor)
+                .frame(width: AppTheme.IconSize.smMd, height: AppTheme.IconSize.smMd)
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .disabled(service.messages.isEmpty)
+        .help("Export chat as JSON")
+    }
+
+    private func exportCurrentChat() {
+        let title = service.sessions.first { $0.id == service.currentSessionId }?.title ?? "Chat"
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "\(title).json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.dateEncodingStrategy = .iso8601
+            let export = ChatSession(
+                id: service.currentSessionId ?? UUID(),
+                title: title,
+                messages: service.messages
+            )
+            try encoder.encode(export).write(to: url)
+        } catch {
+            Log.agent.error("chat export failed: \(error.localizedDescription)")
+        }
+    }
 
     private var historyButton: some View {
         Button { showHistory.toggle() } label: {

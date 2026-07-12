@@ -721,13 +721,16 @@ struct AgentMessage: Identifiable, Codable {
     var blocks: [AgentContentBlock]
     var mentions: [AgentMention]
     var contextHint: String?
+    // Optional so chats saved before timestamps existed still decode.
+    var timestamp: Date?
 
-    init(id: UUID = UUID(), role: Role, blocks: [AgentContentBlock], mentions: [AgentMention] = [], contextHint: String? = nil) {
+    init(id: UUID = UUID(), role: Role, blocks: [AgentContentBlock], mentions: [AgentMention] = [], contextHint: String? = nil, timestamp: Date? = Date()) {
         self.id = id
         self.role = role
         self.blocks = blocks
         self.mentions = mentions
         self.contextHint = contextHint
+        self.timestamp = timestamp
     }
 }
 

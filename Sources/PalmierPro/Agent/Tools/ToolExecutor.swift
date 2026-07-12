@@ -24,9 +24,18 @@ final class ToolExecutor {
     var feedbackState = FeedbackState()
     var lastTranscriptContext: TranscriptionToolContext?
 
+    // Gemini-family models mangle tool names with a namespace prefix
+    // ("default_api.get_timeline", "default_api_get_timeline"); resolve by suffix.
+    static func resolveToolName(_ raw: String) -> ToolName? {
+        if let tool = ToolName(rawValue: raw) { return tool }
+        return ToolName.allCases.first {
+            raw.hasSuffix(".\($0.rawValue)") || raw.hasSuffix("_\($0.rawValue)")
+        }
+    }
+
     func execute(name: String, args: [String: Any], source: String = "agent") async -> ToolResult {
         let started = ContinuousClock.now
-        guard let tool = ToolName(rawValue: name) else {
+        guard let tool = Self.resolveToolName(name) else {
             captureToolAnalytics(
                 toolName: name,
                 source: source,
@@ -35,7 +44,7 @@ final class ToolExecutor {
                 started: started,
                 failureReason: "unknown_tool"
             )
-            return .error("Unknown tool: \(name)")
+            return .error("Unknown tool: \(name). Call tools by their exact declared name (e.g. get_timeline), with no namespace prefix.")
         }
 
         // project tools act on AppState before editor is available
