@@ -178,6 +178,15 @@ extension ToolExecutor {
     // MARK: add_clips
 
     func addClips(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
+        do {
+            return try addClipsResolved(editor, args)
+        } catch let err as ToolError where ["field", "startFrame", "endFrame", "source"].contains(where: err.message.contains) {
+            // Small models misplace entry fields at the top level; show the shape once.
+            throw ToolError(err.message + #" Shape: {"entries":[{"mediaRef":"A1B2","startFrame":0,"source":[12.0,17.0]}]} — every placement field goes inside its entry; source [startSeconds,endSeconds] OR endFrame, never both."#)
+        }
+    }
+
+    private func addClipsResolved(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
         let input: AddClipsInput = try decodeToolArgs(args, path: "add_clips")
         guard !input.entries.isEmpty else { throw ToolError("Missing or empty 'entries' array") }
         if let raws = args["entries"] as? [Any] {
