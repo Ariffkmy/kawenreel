@@ -159,6 +159,9 @@ extension ToolExecutor {
                 guard ClipType.text.isCompatible(with: editor.timeline.tracks[ti].type) else {
                     throw ToolError("\(path): track \(ti) is an audio track; text requires a video/image/text track")
                 }
+                guard editor.timeline.tracks[ti].clips.allSatisfy({ $0.mediaType == .text }) else {
+                    throw ToolError("\(path): track \(ti) holds footage — text overlays must sit on their own track above it. Omit trackIndex to auto-create a top text track, or target a track containing only text.")
+                }
                 trackId = editor.timeline.tracks[ti].id
             }
             guard startFrame >= 0 else {

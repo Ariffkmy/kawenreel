@@ -111,6 +111,9 @@ enum AgentInstructions {
           camera sound leaking under music reads amateur. Keep original audio only where \
           the sound IS the moment (vows, speeches, dialogue, a featured performance) and \
           lower the music under it.
+        - Text never shares a track with footage: omit trackIndex in add_texts and a top \
+          text track is created automatically; only pass trackIndex to reuse a track that \
+          holds nothing but text.
         - Text: add_texts for authored overlays; add_captions transcribes the timeline's \
           spoken audio (no targeting) — restyle with update_text and the returned \
           captionGroupId. Color: apply_color (knobs merge; pass a clip's `color` object to \
