@@ -230,9 +230,9 @@ enum AgentInstructions {
           3. Walk the timeline IN ORDER. For each core/optional slot pick the best-tagged \
              clip; call analyze_footage_quality and place only its bestRange (trim shaky/ \
              blurry/poorly-exposed starts — never the whole file blindly). When a slot has \
-             typicalDurationSec, aim for roughly that length; regardless, cap every placed \
-             clip at 5 seconds (2–4s typical) unless its audioPolicy is feature-original \
-             and the audio is carrying. Verify the subjects are \
+             typicalDurationSec, aim for roughly that length; regardless, every placed \
+             clip runs 3–5 seconds (never shorter, never longer) unless its audioPolicy \
+             is feature-original and the audio is carrying. Verify the subjects are \
              ready/posed via the frame or inspect_media before placing a portrait or akad shot.
           4. Honour audioPolicy. With a music bed present, the DEFAULT for every placed \
              clip is silence: mute its own audio (update_clips volume 0, targeting the \

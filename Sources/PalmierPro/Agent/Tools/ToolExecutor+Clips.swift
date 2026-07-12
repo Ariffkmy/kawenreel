@@ -279,11 +279,43 @@ extension ToolExecutor {
                 let needsAudio = specs.contains { !$0.isAdjustment && $0.asset?.type == .audio }
                 var videoTrackId: String? = nil
                 var audioTrackId: String? = nil
+
+                // Reuse an existing track whose target spans are free; repeated calls
+                // then extend one track instead of stacking a new track per call.
+                // Adjustment layers still get a fresh top track (they must sit above).
+                let freeTrackId: (ClipType, [(Int, Int)]) -> String? = { type, spans in
+                    let candidates = editor.timeline.tracks.indices
+                        .filter { editor.timeline.tracks[$0].type == type }
+                        .sorted { a, b in
+                            let aEmpty = editor.timeline.tracks[a].clips.isEmpty
+                            let bEmpty = editor.timeline.tracks[b].clips.isEmpty
+                            if aEmpty != bEmpty { return !aEmpty }
+                            return a > b
+                        }
+                    for i in candidates {
+                        let clips = editor.timeline.tracks[i].clips
+                        let allFree = spans.allSatisfy { span in
+                            clips.allSatisfy { $0.startFrame + $0.durationFrames <= span.0 || $0.startFrame >= span.1 }
+                        }
+                        if allFree { return editor.timeline.tracks[i].id }
+                    }
+                    return nil
+                }
                 if needsVideo {
-                    videoTrackId = editor.timeline.tracks[editor.insertTrack(at: 0, type: .video)].id
+                    let spans = specs.filter { $0.isAdjustment || $0.asset?.type != .audio }
+                        .map { ($0.startFrame, $0.startFrame + $0.durationFrames) }
+                    videoTrackId = anyAdjustment ? nil : freeTrackId(.video, spans)
+                    if videoTrackId == nil {
+                        videoTrackId = editor.timeline.tracks[editor.insertTrack(at: 0, type: .video)].id
+                    }
                 }
                 if needsAudio {
-                    audioTrackId = editor.timeline.tracks[editor.insertTrack(at: 0, type: .audio)].id
+                    let spans = specs.filter { !$0.isAdjustment && $0.asset?.type == .audio }
+                        .map { ($0.startFrame, $0.startFrame + $0.durationFrames) }
+                    audioTrackId = freeTrackId(.audio, spans)
+                    if audioTrackId == nil {
+                        audioTrackId = editor.timeline.tracks[editor.insertTrack(at: 0, type: .audio)].id
+                    }
                 }
                 for i in specs.indices {
                     specs[i].trackId = specs[i].isAdjustment ? videoTrackId
