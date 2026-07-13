@@ -4,7 +4,12 @@
       "Bash(swift build *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "PowerShell(stripe *)",
+      "PowerShell(scoop *)",
+      "PowerShell(supabase secrets *)",
+      "PowerShell(supabase db *)",
+      "PowerShell(git *)"
     ]
   }
 }

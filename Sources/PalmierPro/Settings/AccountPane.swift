@@ -86,11 +86,11 @@ struct AccountPane: View {
             cardCaption(plan.tier.planLabel)
 
             HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
-                Text("$\(plan.effectiveMonthlyPriceUsd)")
+                Text(plan.priceLabel)
                     .font(.system(size: AppTheme.FontSize.xl, weight: .semibold))
                     .foregroundStyle(AppTheme.Text.primaryColor)
                 if plan.hasDiscount {
-                    Text("$\(plan.monthlyPriceUsd)")
+                    Text(plan.originalPriceLabel)
                         .font(.system(size: AppTheme.FontSize.sm))
                         .foregroundStyle(AppTheme.Text.tertiaryColor)
                         .strikethrough()

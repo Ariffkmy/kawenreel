@@ -245,5 +245,6 @@ enum AuthCoordinator {
         if signedIn {
             SignInWindowController.shared.close()
         }
+        Task { await AccountService.shared.refreshAccount() }
     }
 }

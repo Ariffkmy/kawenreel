@@ -100,13 +100,13 @@ struct AccountPopoverCard: View {
                 .font(.system(size: AppTheme.FontSize.sm, weight: .semibold))
                 .foregroundStyle(AppTheme.Text.primaryColor)
 
-            Text("$\(plan.effectiveMonthlyPriceUsd)/mo")
+            Text("\(plan.priceLabel)/mo")
                 .font(.system(size: AppTheme.FontSize.sm))
                 .foregroundStyle(AppTheme.Text.secondaryColor)
                 .monospacedDigit()
 
             if plan.hasDiscount {
-                Text("$\(plan.monthlyPriceUsd)")
+                Text(plan.originalPriceLabel)
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(AppTheme.Text.tertiaryColor)
                     .strikethrough()
