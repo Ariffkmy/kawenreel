@@ -39,8 +39,5 @@ jobs:
           rm -rf .build/artifacts .build/workspace-state.json
           swift package resolve
 
-      - name: Build
-        run: swift build
-
       - name: Test
         run: swift test

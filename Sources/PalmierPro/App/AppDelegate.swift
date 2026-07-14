@@ -1,6 +1,8 @@
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var isTerminating = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Activate the app (required when launched from CLI, not a .app bundle)
         NSApp.setActivationPolicy(.regular)
@@ -42,6 +44,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if isTerminating { return .terminateLater }
+        isTerminating = true
+        if MLXRuntime.beginTermination() { return .terminateNow }
+
+        Task { @MainActor in
+            await MLXRuntime.waitUntilIdle()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
 
     @MainActor
     @objc func newProject(_ sender: Any?) {

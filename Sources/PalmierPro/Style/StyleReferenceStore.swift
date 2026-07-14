@@ -163,7 +163,7 @@ final class StyleReferenceStore {
                 let job = self.queue.removeFirst()
                 self.states[job.key] = .analyzing
                 do {
-                    try await ExportCoordinator.waitWhileExportActive()
+                    try await ExportQueue.shared.waitWhileExportActive()
                     let profile = try await StyleAnalyzer.analyze(url: job.url)
                     try FileManager.default.createDirectory(
                         at: job.profileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

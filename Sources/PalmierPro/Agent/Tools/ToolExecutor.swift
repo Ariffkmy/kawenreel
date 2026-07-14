@@ -6,18 +6,45 @@ struct ToolError: Error { let message: String; init(_ m: String) { self.message 
 /// Tool implementations live in the `ToolExecutor+*.swift` extension files.
 @MainActor
 final class ToolExecutor {
-    private let editorProvider: () -> EditorViewModel?
-    var editor: EditorViewModel? { editorProvider() }
-    private let openProjectHandler: ((String) async throws -> EditorViewModel)?
+    // In-app chat stays with the editor owned by its project window.
+    private weak var inAppEditor: EditorViewModel?
+    // External MCP observes the frontmost project only to guard writes.
+    private let frontmostProjectProvider: (() -> VideoProject?)?
+    // External MCP stays on this project until manage_project rebinds it.
+    private weak var boundProject: VideoProject?
+    private(set) var mcpSessionActivation = Analytics.SessionActivation()
+    let exportQueue: ExportQueue
 
-    init(editor: EditorViewModel) {
-        self.editorProvider = { [weak editor] in editor }
-        self.openProjectHandler = nil
+    var editor: EditorViewModel? {
+        frontmostProjectProvider == nil ? inAppEditor : sessionProject?.editorViewModel
     }
 
-    init(editorProvider: @escaping () -> EditorViewModel?, openProject: ((String) async throws -> EditorViewModel)? = nil) {
-        self.editorProvider = editorProvider
-        self.openProjectHandler = openProject
+    var sessionProject: VideoProject? {
+        guard frontmostProjectProvider != nil,
+              let project = boundProject,
+              AppState.shared.openProjects.contains(where: { $0 === project }) else { return nil }
+        return project
+    }
+
+    var frontmostProject: VideoProject? { frontmostProjectProvider?() }
+
+    init(editor: EditorViewModel, exportQueue: ExportQueue = .shared) {
+        self.inAppEditor = editor
+        self.frontmostProjectProvider = nil
+        self.exportQueue = exportQueue
+    }
+
+    init(projectProvider: @escaping () -> VideoProject?, exportQueue: ExportQueue = .shared) {
+        let project = projectProvider()
+        self.inAppEditor = nil
+        self.frontmostProjectProvider = projectProvider
+        self.boundProject = project
+        self.exportQueue = exportQueue
+    }
+
+    func bindProject(_ project: VideoProject?) {
+        guard frontmostProjectProvider != nil else { return }
+        boundProject = project
     }
 
     private var agentUndoStack: [String] = []
@@ -46,11 +73,12 @@ final class ToolExecutor {
             )
             return .error("Unknown tool: \(name). Call tools by their exact declared name (e.g. get_timeline), with no namespace prefix.")
         }
+        activateMCPSessionIfNeeded(source: source, toolName: tool.rawValue)
 
         // project tools act on AppState before editor is available
         switch tool {
-        case .getProjects, .openProject, .newProject, .closeProject:
-            let result = await runProjectTool(tool, args)
+        case .manageProject:
+            let result = await manageProject(args)
             captureToolAnalytics(
                 toolName: tool.rawValue,
                 source: source,
@@ -61,6 +89,10 @@ final class ToolExecutor {
             return result
         default:
             break
+        }
+
+        if !Self.canReadInactiveProject(tool), let error = projectFocusError() {
+            return .error(error)
         }
 
         guard let editor else {
@@ -125,6 +157,34 @@ final class ToolExecutor {
         )
         // Shorten on pre ∪ post ids: new ids and just-removed ids both stay short.
         return await shorteningIds(in: result, editor: editor, alsoKnown: idsBefore)
+    }
+
+    private func activateMCPSessionIfNeeded(source: String, toolName: String) {
+        guard source == "mcp", mcpSessionActivation.activate() else { return }
+        Analytics.capture(.mcpSessionActivated, properties: [
+            "source": "mcp",
+            "tool_name": toolName,
+        ])
+    }
+
+    private func projectFocusError() -> String? {
+        guard frontmostProjectProvider != nil else { return nil }
+        let session = sessionProject
+        let frontmost = frontmostProject
+        guard session !== frontmost else { return nil }
+        let sessionName = session?.displayName ?? boundProject?.displayName ?? "no project"
+        let frontmostName = frontmost?.displayName ?? "no project"
+        return "This session is on '\(sessionName)', but '\(frontmostName)' is active in Palmier Pro. Activate '\(sessionName)' or call manage_project with action='open' before making changes."
+    }
+
+    private static func canReadInactiveProject(_ tool: ToolName) -> Bool {
+        switch tool {
+        case .getTimeline, .inspectTimeline, .getMedia, .inspectMedia, .searchMedia,
+             .getMulticam, .getTranscript, .detectBeats, .inspectColor, .listModels, .sendFeedback:
+            true
+        default:
+            false
+        }
     }
 
     private func captureToolAnalytics(
@@ -195,6 +255,7 @@ final class ToolExecutor {
         case .updateText:    return try updateText(editor, args)
         case .addCaptions:   return try await addCaptions(editor, args)
         case .exportProject: return try await exportProject(editor, args)
+        case .manageExports: return try manageExports(editor, args)
         case .generateVideo: return try generate(editor, args, type: .video)
         case .generateImage: return try generate(editor, args, type: .image)
         case .generateAudio: return try await generateAudio(editor, args)
@@ -215,8 +276,8 @@ final class ToolExecutor {
         case .createTimeline:     return try createTimeline(editor, args)
         case .setActiveTimeline:  return try setActiveTimeline(editor, args)
         case .readSkill:     return readSkill(args)
-        case .getProjects, .openProject, .newProject, .closeProject:
-            return await runProjectTool(tool, args)
+        case .manageProject:
+            return await manageProject(args)
         case .importFont:         return try importFont(args)
         }
     }
@@ -285,10 +346,17 @@ final class ToolExecutor {
     }
 
     func withUndoGroup<T>(_ editor: EditorViewModel, actionName: String, _ work: () throws -> T) rethrows -> T {
-        editor.undoManager?.beginUndoGrouping()
+        guard let undoManager = editor.undoManager else { return try work() }
+        let restoresEventGrouping = undoManager.groupsByEvent && undoManager.groupingLevel <= 1
+        if restoresEventGrouping {
+            undoManager.groupsByEvent = false
+            if undoManager.groupingLevel == 1 { undoManager.endUndoGrouping() }
+        }
+        undoManager.beginUndoGrouping()
         defer {
-            editor.undoManager?.endUndoGrouping()
-            editor.undoManager?.setActionName(actionName)
+            undoManager.setActionName(actionName)
+            undoManager.endUndoGrouping()
+            if restoresEventGrouping { undoManager.groupsByEvent = true }
         }
         return try work()
     }
@@ -302,7 +370,8 @@ private extension Duration {
 func validateUnknownKeys(_ entry: [String: Any], allowed: Set<String>, path: String) throws {
     let unknown = Set(entry.keys).subtracting(allowed)
     guard unknown.isEmpty else {
-        throw ToolError("\(path): unknown field(s) '\(unknown.sorted().joined(separator: "', '"))'. Allowed: \(allowed.sorted().joined(separator: ", ")).")
+        let allowedFields = allowed.isEmpty ? "none" : allowed.sorted().joined(separator: ", ")
+        throw ToolError("\(path): unknown field(s) '\(unknown.sorted().joined(separator: "', '"))'. Allowed: \(allowedFields).")
     }
 }
 
