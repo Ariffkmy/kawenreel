@@ -7,13 +7,6 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 const DAILY_LIMIT = parseInt(Deno.env.get("LLM_DAILY_REQUEST_LIMIT") ?? "200", 10);
 // Keep in sync with OpenRouterModelCatalog.swift.
 const DEFAULT_ALLOWED_MODELS = [
-  "google/gemini-2.5-flash-lite",
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "google/gemini-3.5-flash",
-  "google/gemini-3.1-flash-lite",
-  "openai/gpt-4.1-mini",
-  "openai/gpt-4.1",
   "anthropic/claude-sonnet-4.6",
   "anthropic/claude-sonnet-4.5",
   "anthropic/claude-sonnet-4",

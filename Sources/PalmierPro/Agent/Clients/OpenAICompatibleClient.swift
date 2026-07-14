@@ -73,7 +73,7 @@ struct OpenAICompatibleConfig: Sendable {
     var referer: String?
     var appTitle: String?
 
-    static let defaultModel = "google/gemini-2.5-flash-lite"
+    static let defaultModel = "anthropic/claude-sonnet-4.6"
     static let openRouterBaseURL = URL(string: "https://openrouter.ai/api/v1")!
     static let modelDefaultsKey = "agentOpenRouterModel"
 
