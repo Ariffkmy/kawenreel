@@ -140,8 +140,14 @@ extension ToolExecutor {
         _ asset: MediaAsset, fps: Int,
         durationFrames: Int?, source: [Double]?, path: String, framesLabel: String = "durationFrames"
     ) throws -> (trimStart: Int, duration: Int, trimEnd: Int?) {
-        guard durationFrames == nil || source == nil else {
-            throw ToolError("\(path): set source OR \(framesLabel), not both — source picks a span of the asset, \(framesLabel) an exact timeline length.")
+        var durationFrames = durationFrames
+        if let d = durationFrames, let s = source, s.count == 2 {
+            // Redundant but consistent pairs are accepted; source wins.
+            let span = secondsToFrame(seconds: s[1], fps: fps) - secondsToFrame(seconds: max(s[0], 0), fps: fps)
+            guard abs(span - d) <= 1 else {
+                throw ToolError("\(path): set source OR \(framesLabel), not both — source picks a span of the asset, \(framesLabel) an exact timeline length (here source spans \(span) frames but \(framesLabel) implies \(d)).")
+            }
+            durationFrames = nil
         }
         let isStill = asset.type == .image
         let sourceLen = secondsToFrame(seconds: asset.duration, fps: fps)
@@ -213,7 +219,7 @@ extension ToolExecutor {
             var trackId: String? = nil
             if let ti = entry.trackIndex {
                 guard editor.timeline.tracks.indices.contains(ti) else {
-                    throw ToolError("entries[\(idx)]: track index \(ti) out of range (0..\(editor.timeline.tracks.count - 1))")
+                    throw ToolError("entries[\(idx)]: track index \(ti) out of range (0..\(editor.timeline.tracks.count - 1)). Create the track first with manage_tracks add, or omit trackIndex on every entry to auto-place.")
                 }
                 let targetType = editor.timeline.tracks[ti].type
                 if !isAdj {
@@ -385,7 +391,7 @@ extension ToolExecutor {
             }
         }
         guard editor.timeline.tracks.indices.contains(input.trackIndex) else {
-            throw ToolError("trackIndex \(input.trackIndex) out of range (0..\(editor.timeline.tracks.count - 1))")
+            throw ToolError("trackIndex \(input.trackIndex) out of range (0..\(editor.timeline.tracks.count - 1)). Create the track first with manage_tracks add.")
         }
         guard input.atFrame >= 0 else { throw ToolError("atFrame must be >= 0 (got \(input.atFrame))") }
         let targetType = editor.timeline.tracks[input.trackIndex].type
@@ -943,8 +949,21 @@ extension ToolExecutor {
     // MARK: manage_tracks
 
     func manageTracks(_ editor: EditorViewModel, _ args: [String: Any]) throws -> ToolResult {
-        try validateUnknownKeys(args, allowed: ["reorder", "set", "remove"], path: "manage_tracks")
+        try validateUnknownKeys(args, allowed: ["add", "reorder", "set", "remove"], path: "manage_tracks")
         let tracks = editor.timeline.tracks
+
+        var adds: [(type: ClipType, index: Int?)] = []
+        for (i, raw) in (args["add"] as? [Any] ?? []).enumerated() {
+            guard let entry = raw as? [String: Any] else { throw ToolError("add[\(i)] must be an object") }
+            try validateUnknownKeys(entry, allowed: ["type", "index"], path: "add[\(i)]")
+            let type: ClipType
+            switch entry["type"] as? String {
+            case "video": type = .video
+            case "audio": type = .audio
+            default: throw ToolError("add[\(i)]: 'type' is required and must be 'video' or 'audio'")
+            }
+            adds.append((type, entry.int("index")))
+        }
 
         func trackId(_ index: Int, _ path: String) throws -> String {
             guard tracks.indices.contains(index) else {
@@ -985,8 +1004,8 @@ extension ToolExecutor {
             removeIds.append(try trackId(index, "remove[\(i)]"))
         }
 
-        guard !reorders.isEmpty || !flagSets.isEmpty || !removeIds.isEmpty else {
-            throw ToolError("Nothing to do — pass at least one of reorder, set, remove.")
+        guard !adds.isEmpty || !reorders.isEmpty || !flagSets.isEmpty || !removeIds.isEmpty else {
+            throw ToolError("Nothing to do — pass at least one of add, reorder, set, remove.")
         }
 
         let multicamTrackIds = Set(tracks.filter { t in
@@ -1014,6 +1033,10 @@ extension ToolExecutor {
                 if let s = f.syncLocked, track.syncLocked != s { editor.toggleTrackSyncLock(trackIndex: idx) }
             }
             if !removeIds.isEmpty { editor.removeTracks(ids: removeIds) }
+            for a in adds {
+                let requested = a.index ?? (a.type == .audio ? editor.timeline.tracks.count : 0)
+                editor.insertTrack(at: requested, type: a.type)
+            }
         }
 
         let order = editor.timeline.tracks.indices.map { i -> [String: Any] in
@@ -1025,7 +1048,7 @@ extension ToolExecutor {
             return entry
         }
         var notes: [String] = []
-        if !reorders.isEmpty || !removeIds.isEmpty {
+        if !adds.isEmpty || !reorders.isEmpty || !removeIds.isEmpty {
             notes.append("Track indices changed — 'tracks' is the new order; index 0 renders on top.")
         }
         return mutationResult(editor, since: snapshot, extra: ["tracks": order], notes: notes)

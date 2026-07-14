@@ -149,20 +149,29 @@ struct AgentPanelView: View {
     @ViewBuilder
     private var modelPicker: some View {
         Menu {
-            ForEach(AgentProviderMode.allCases, id: \.self) { mode in
-                Button {
-                    service.providerMode = mode
-                } label: {
-                    if service.providerMode == mode {
-                        Label(mode.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(mode.displayName)
+            if service.providerMode == .defaultSetting {
+                Section("Model") {
+                    ForEach(OpenRouterModelCatalog.all) { model in
+                        openRouterModelButton(model)
+                    }
+                }
+            }
+            Section("Provider") {
+                ForEach(AgentProviderMode.allCases, id: \.self) { mode in
+                    Button {
+                        service.providerMode = mode
+                    } label: {
+                        if service.providerMode == mode {
+                            Label(mode.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(mode.displayName)
+                        }
                     }
                 }
             }
         } label: {
             HStack(spacing: AppTheme.Spacing.xs) {
-                Text(service.providerMode.displayName)
+                Text(modelPickerLabel)
                     .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                     .foregroundStyle(AppTheme.Text.secondaryColor)
                 Image(systemName: "chevron.down")
@@ -173,6 +182,38 @@ struct AgentPanelView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+
+    private var modelPickerLabel: String {
+        switch service.providerMode {
+        case .defaultSetting:
+            let name = OpenRouterModelCatalog.displayName(for: service.openRouterModel)
+            return service.openRouterModel == OpenRouterModelCatalog.defaultModelID
+                ? "\(name) · Default" : name
+        case .claudeOwnKey:
+            return service.providerMode.displayName
+        }
+    }
+
+    @ViewBuilder
+    private func openRouterModelButton(_ model: OpenRouterModel) -> some View {
+        let title = if !model.supportsTools {
+            "\(model.displayName) — No tool support"
+        } else if model.isDefault {
+            "\(model.displayName) — Default"
+        } else {
+            model.displayName
+        }
+        Button {
+            service.openRouterModel = model.id
+        } label: {
+            if service.openRouterModel == model.id {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+        .disabled(!model.supportsTools)
     }
 
     private var toolResults: [String: ToolRunResult] {
@@ -267,6 +308,18 @@ struct AgentPanelView: View {
                     .font(.system(size: AppTheme.FontSize.xs))
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(err.localizedDescription, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: AppTheme.FontSize.xs))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .help("Copy error")
                 if let cta = errorCTA(for: err) {
                     Button(action: cta.action) {
                         Text(cta.title)

@@ -53,8 +53,10 @@ extension ToolExecutor {
 
     private func clipMapping(editor: EditorViewModel, mediaRef: String, clipId: String?) throws -> Clip? {
         guard let clipId else { return nil }
+        // Models pass the mediaRef again as clipId; treat that as a library-only call.
+        if clipId == mediaRef, editor.findClip(id: clipId) == nil { return nil }
         guard let loc = editor.findClip(id: clipId) else {
-            throw ToolError("analyze_footage_quality: clipId not found: \(clipId)")
+            throw ToolError("analyze_footage_quality: clipId not found: \(clipId). clipId is a TIMELINE clip id from get_timeline — omit it to analyze the library asset directly.")
         }
         let clip = editor.timeline.tracks[loc.trackIndex].clips[loc.clipIndex]
         guard clip.mediaRef == mediaRef else {

@@ -163,6 +163,20 @@ final class AgentService {
         didSet { UserDefaults.standard.set(model.rawValue, forKey: "agentModel") }
     }
 
+    var openRouterModel: String = {
+        let raw = UserDefaults.standard.string(forKey: OpenAICompatibleConfig.modelDefaultsKey)
+        guard let raw, OpenRouterModelCatalog.model(id: raw)?.supportsTools == true else {
+            UserDefaults.standard.set(
+                OpenRouterModelCatalog.defaultModelID,
+                forKey: OpenAICompatibleConfig.modelDefaultsKey
+            )
+            return OpenRouterModelCatalog.defaultModelID
+        }
+        return raw
+    }() {
+        didSet { UserDefaults.standard.set(openRouterModel, forKey: OpenAICompatibleConfig.modelDefaultsKey) }
+    }
+
     var sessions: [ChatSession] = []
     var currentSessionId: UUID?
     var messages: [AgentMessage] = []
@@ -450,6 +464,7 @@ final class AgentService {
             AnthropicToolSchema(name: $0.name.rawValue, description: $0.description, inputSchema: $0.inputSchema)
         }
 
+        var repeatedFailures: [String: Int] = [:]
         loop: while !Task.isCancelled {
             resolveOrphanToolUses()
             let apiMsgs = await apiMessages()
@@ -481,7 +496,12 @@ final class AgentService {
                 }
 
                 if stopReason == .toolUse {
-                    await runPendingToolUses(assistantID: assistantID)
+                    if let stuck = await runPendingToolUses(assistantID: assistantID, repeatedFailures: &repeatedFailures) {
+                        streamError = .upstream(
+                            "Stopped: the model sent the same failing \(stuck) call \(Self.maxIdenticalFailures) times without correcting its arguments. Try again, or pick a more capable model."
+                        )
+                        break loop
+                    }
                     continue loop
                 }
                 break loop
@@ -524,11 +544,16 @@ final class AgentService {
         messages[index].blocks.append(.toolUse(id: toolUseID, name: name, inputJSON: inputJSON))
     }
 
-    private func runPendingToolUses(assistantID: UUID) async {
-        guard let assistantIndex = assistantMessageIndex(id: assistantID) else { return }
+    static let maxIdenticalFailures = 3
+
+    /// Executes the turn's pending tool calls. Returns the tool name that hit the
+    /// identical-failure cap (same tool + same arguments failing repeatedly), or
+    /// nil to continue the loop — the breaker for models that never correct.
+    private func runPendingToolUses(assistantID: UUID, repeatedFailures: inout [String: Int]) async -> String? {
+        guard let assistantIndex = assistantMessageIndex(id: assistantID) else { return nil }
         guard let executor = toolExecutor else {
             messages.append(AgentMessage(role: .user, blocks: [.text("Tool executor unavailable.")]))
-            return
+            return nil
         }
 
         let toolUses: [(id: String, name: String, input: String)] = messages[assistantIndex].blocks.compactMap {
@@ -537,18 +562,63 @@ final class AgentService {
         }
         let alreadyResolved = resolvedToolUseIds(afterAssistantAt: assistantIndex)
 
+        var stuckTool: String? = nil
         var resultBlocks: [AgentContentBlock] = []
         for use in toolUses where !alreadyResolved.contains(use.id) {
             if Task.isCancelled {
                 resultBlocks.append(.toolResult(toolUseId: use.id, content: [.text("Cancelled")], isError: true))
                 continue
             }
-            let result = await executor.execute(name: use.name, args: Self.parseJSONObject(use.input))
+            var result = await executor.execute(name: use.name, args: Self.parseJSONObject(use.input))
+
+            let key = "\(use.name)|\(use.input)"
+            if result.isError {
+                let count = (repeatedFailures[key] ?? 0) + 1
+                repeatedFailures[key] = count
+                if count >= Self.maxIdenticalFailures {
+                    if let fallbackArgs = Self.nativePlacementFallback(name: use.name, input: use.input) {
+                        let native = await executor.execute(name: use.name, args: fallbackArgs)
+                        if !native.isError {
+                            var content = native.content
+                            content.append(.text("Recovered natively: the repeated arguments kept failing, so Palmier auto-placed with trackIndex resolved by the app. Continue from this result — do not resend the original call."))
+                            result = ToolResult(content: content, isError: false)
+                            repeatedFailures[key] = 0
+                        } else {
+                            stuckTool = use.name
+                        }
+                    } else {
+                        stuckTool = use.name
+                    }
+                }
+            } else {
+                repeatedFailures[key] = 0
+            }
             resultBlocks.append(.toolResult(toolUseId: use.id, content: result.content, isError: result.isError))
         }
         if !resultBlocks.isEmpty {
             messages.append(AgentMessage(role: .user, blocks: resultBlocks))
         }
+        return stuckTool
+    }
+
+    /// Rebuilds a repeatedly failing placement call the way the app's own
+    /// drag-and-drop would run it: no explicit trackIndex (auto-place / create),
+    /// and `source` wins when a redundant endFrame rides along. Only tools whose
+    /// executors support omitted tracks are eligible. Returns nil when the call
+    /// isn't a placement or sanitizing changes nothing.
+    static func nativePlacementFallback(name: String, input: String) -> [String: Any]? {
+        guard name == "add_clips" || name == "add_texts" else { return nil }
+        var args = parseJSONObject(input)
+        guard var entries = args["entries"] as? [[String: Any]], !entries.isEmpty else { return nil }
+        var changed = false
+        for i in entries.indices {
+            if entries[i].removeValue(forKey: "trackIndex") != nil { changed = true }
+            if name == "add_clips", entries[i]["source"] != nil,
+               entries[i].removeValue(forKey: "endFrame") != nil { changed = true }
+        }
+        guard changed else { return nil }
+        args["entries"] = entries
+        return args
     }
 
     private func nextNonSystemIndex(after index: Int) -> Int {

@@ -80,13 +80,14 @@ struct OpenAICompatibleConfig: Sendable {
     /// Routes through the Kawenreel LLM proxy edge function. The signed-in user's
     /// session token is the credential; the provider API key lives server-side.
     static func kawenreelProxy(accessToken: String) -> OpenAICompatibleConfig {
-        OpenAICompatibleConfig(
+        let model = UserDefaults.standard.string(forKey: modelDefaultsKey) ?? defaultModel
+        return OpenAICompatibleConfig(
             baseURL: SupabaseConfig.url.appendingPathComponent("functions/v1/llm-proxy"),
             apiKey: accessToken,
-            model: UserDefaults.standard.string(forKey: modelDefaultsKey) ?? defaultModel,
+            model: model,
             maxTokens: 8192,
             enablePromptCache: true,
-            temperature: nil,
+            temperature: OpenRouterModelCatalog.model(id: model)?.temperature,
             referer: nil,
             appTitle: infoString("CFBundleName")
         )
@@ -106,7 +107,7 @@ struct OpenAICompatibleConfig: Sendable {
             model: model,
             maxTokens: 8192,
             enablePromptCache: true,
-            temperature: nil,
+            temperature: OpenRouterModelCatalog.model(id: model)?.temperature,
             referer: infoString("PalmierOpenRouterReferer"),
             appTitle: infoString("CFBundleName")
         )

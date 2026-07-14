@@ -387,9 +387,21 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .manageTracks,
-            description: "Track-level operations in one undoable action: reorder (stacking order — index 0 renders on top; a video track can only move within the video zone, audio within audio), set flags (muted silences an audio track; hidden excludes a video track from the render; syncLocked controls whether ripple edits shift it), and remove (deletes tracks with every clip on them; linked partners on OTHER tracks stay). Arrays run reorder → set → remove; every index refers to the track order at call time (resolved up front). Returns the resulting track order — remaining indexes shift after reorder/remove. Tracks holding multicam clips can't be removed or sync-unlocked (mute/hide stay free).",
+            description: "Track-level operations in one undoable action: add (create an empty video or audio track — use when a placement needs a track that doesn't exist yet, e.g. music with no audio track or an overlay with no free video track), reorder (stacking order — index 0 renders on top; a video track can only move within the video zone, audio within audio), set flags (muted silences an audio track; hidden excludes a video track from the render; syncLocked controls whether ripple edits shift it), and remove (deletes tracks with every clip on them; linked partners on OTHER tracks stay). Arrays run reorder → set → remove → add; every index in reorder/set/remove refers to the track order at call time (resolved up front). Returns the resulting track order — indexes shift after reorder/remove/add. Tracks holding multicam clips can't be removed or sync-unlocked (mute/hide stay free).",
             inputSchema: objectSchema(
                 properties: [
+                    "add": [
+                        "type": "array",
+                        "description": "Empty tracks to create. Video tracks default to the top of the video zone; audio tracks to the bottom. Indexes are clamped so video always stays above audio.",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "type": ["type": "string", "enum": ["video", "audio"], "description": "Track type. Video tracks also hold images, text, and adjustment layers."],
+                                "index": ["type": "integer", "description": "Optional insertion index in the final order; clamped to the type's zone."],
+                            ],
+                            "required": ["type"],
+                        ],
+                    ],
                     "reorder": [
                         "type": "array",
                         "description": "Moves, applied in order. Use to fix stacking, e.g. bring a PIP inset's track to index 0.",

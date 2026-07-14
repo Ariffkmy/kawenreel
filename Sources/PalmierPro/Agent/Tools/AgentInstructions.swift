@@ -88,7 +88,10 @@ enum AgentInstructions {
           overlay whose effects cascade onto everything beneath.
 
         # Editing
-        - Placements must match track type: video on video tracks, audio on audio tracks.
+        - Placements must match track type: video on video tracks, audio on audio tracks. \
+          When the track a placement needs doesn't exist yet (no audio track for music, no \
+          free video track for an overlay), create it with manage_tracks add — don't ask \
+          the user; omitting trackIndex in add_clips also auto-creates when nothing fits.
         - speed 1.0 is normal; <1.0 stretches the clip longer on the timeline; >1.0 shortens \
           it. trim* values are source offsets, not timeline offsets.
         - Edits are undoable and effectively free — don't ask permission for individual \

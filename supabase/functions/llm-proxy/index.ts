@@ -5,7 +5,21 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 // whitelisted, and each user gets a fixed number of requests per UTC day.
 
 const DAILY_LIMIT = parseInt(Deno.env.get("LLM_DAILY_REQUEST_LIMIT") ?? "200", 10);
-const ALLOWED_MODELS = (Deno.env.get("LLM_ALLOWED_MODELS") ?? "google/gemini-2.5-flash-lite")
+// Keep in sync with OpenRouterModelCatalog.swift.
+const DEFAULT_ALLOWED_MODELS = [
+  "google/gemini-2.5-flash-lite",
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "google/gemini-3.5-flash",
+  "google/gemini-3.1-flash-lite",
+  "openai/gpt-4.1-mini",
+  "openai/gpt-4.1",
+  "anthropic/claude-sonnet-4.6",
+  "anthropic/claude-sonnet-4.5",
+  "anthropic/claude-sonnet-4",
+].join(",");
+
+const ALLOWED_MODELS = (Deno.env.get("LLM_ALLOWED_MODELS") ?? DEFAULT_ALLOWED_MODELS)
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean);
