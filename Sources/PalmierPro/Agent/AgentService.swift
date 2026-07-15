@@ -84,7 +84,7 @@ final class AgentService {
             return hasApiKey
         case .defaultSetting:
             if hasOpenRouterKey { return true }
-            return SupabaseService.shared.isSignedIn
+            return AccountService.shared.isSignedIn && AccountService.shared.hasCredits
         }
     }
 

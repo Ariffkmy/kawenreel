@@ -44,6 +44,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "kawenreel" {
+            Task { @MainActor in
+                do {
+                    try await SupabaseService.shared.handleAuthCallback(url)
+                    Log.account.notice("auth callback handled", telemetry: "Auth callback handled")
+                } catch {
+                    Log.account.warning(
+                        "auth callback failed: \(Log.detail(error))",
+                        telemetry: "Auth callback failed",
+                        data: ["error": error.localizedDescription]
+                    )
+                }
+            }
+        }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if isTerminating { return .terminateLater }
         isTerminating = true

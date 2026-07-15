@@ -28,6 +28,10 @@ serve(async (req) => {
       return json({ error: "Sign in required" }, 401);
     }
 
+    if (!(await hasRemainingCredits(userId))) {
+      return json({ error: "Subscribe or buy credits to keep using the AI assistant." }, 402);
+    }
+
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -90,6 +94,41 @@ async function authedUserId(req: Request): Promise<string | null> {
   if (!res.ok) return null;
   const user = await res.json();
   return typeof user?.id === "string" ? user.id : null;
+}
+
+// Mirrors AccountService.hasCredits: a paid tier's monthly budget, plus any
+// purchased top-up, minus what's been spent this billing period.
+async function hasRemainingCredits(userId: string): Promise<boolean> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const base = Deno.env.get("SUPABASE_URL")!;
+  const headers = {
+    Authorization: `Bearer ${serviceKey}`,
+    apikey: serviceKey,
+  };
+
+  const billingRes = await fetch(
+    `${base}/rest/v1/billing_accounts?user_id=eq.${userId}&select=tier,purchased_credits,spent_credits_this_period`,
+    { headers },
+  );
+  if (!billingRes.ok) return false;
+  const billingRows = await billingRes.json();
+  const billing = billingRows[0] ?? { tier: "none", purchased_credits: 0, spent_credits_this_period: 0 };
+
+  let monthlyBudget = 0;
+  if (billing.tier === "pro" || billing.tier === "max") {
+    const planRes = await fetch(
+      `${base}/rest/v1/available_plans?tier=eq.${billing.tier}&select=monthly_budget_credits`,
+      { headers },
+    );
+    if (planRes.ok) {
+      const planRows = await planRes.json();
+      monthlyBudget = planRows[0]?.monthly_budget_credits ?? 0;
+    }
+  }
+
+  const budget = monthlyBudget + (billing.purchased_credits ?? 0);
+  const remaining = budget - (billing.spent_credits_this_period ?? 0);
+  return remaining > 0;
 }
 
 // Atomically bumps today's request count via the increment_llm_usage SQL function

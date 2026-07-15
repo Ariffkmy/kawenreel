@@ -55,8 +55,17 @@ final class SupabaseService {
     /// email confirmation first (no session until the link is clicked).
     @discardableResult
     func signUp(email: String, password: String) async throws -> Bool {
-        let response = try await client.auth.signUp(email: email, password: password)
+        let response = try await client.auth.signUp(
+            email: email, password: password,
+            redirectTo: URL(string: "kawenreel://auth-callback")
+        )
         return response.session != nil
+    }
+
+    /// Completes a deep-link auth callback (email confirmation, password reset) by
+    /// exchanging the URL Supabase redirected to back into a session.
+    func handleAuthCallback(_ url: URL) async throws {
+        _ = try await client.auth.session(from: url)
     }
 
     func resendConfirmation(email: String) async throws {
