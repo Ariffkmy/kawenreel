@@ -139,7 +139,7 @@ extension ToolExecutor {
         let reset = input.reset ?? false
         let snapshot = timelineSnapshot(editor)
         let actionName = input.clipIds.count == 1 ? "Color Grade (Agent)" : "Color Grade ×\(input.clipIds.count) (Agent)"
-        withUndoGroup(editor, actionName: actionName) {
+        try withUndoGroup(editor, actionName: actionName) {
             editor.mutateClips(ids: Set(input.clipIds), actionName: actionName) { clip in
                 let nonColor = (clip.effects ?? []).filter { !$0.type.hasPrefix("color.") }
                 if let pastedStack {
@@ -620,7 +620,7 @@ extension ToolExecutor {
 
             // Map gap values to apply_color parameters (inverse = correction)
             // Use existing apply_color mechanism via mutateClips
-            withUndoGroup(editor, actionName: "Color Match (Ref)") {
+            try withUndoGroup(editor, actionName: "Color Match (Ref)") {
                 editor.mutateClips(ids: [clipId], actionName: "Color Match") { clip in
                     var state = GradeState(effects: clip.effects)
 

@@ -18,7 +18,7 @@ struct HomeView: View {
     var body: some View {
         HStack(spacing: 0) {
             HomeSidebar()
-                .frame(width: 220)
+                .frame(width: AppTheme.Settings.sidebarWidth)
 
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -50,8 +50,8 @@ struct HomeView: View {
             header
             SampleProjectsStrip()
             Text("My Projects")
-                .font(.system(size: AppTheme.FontSize.md, weight: .semibold))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
+                .font(.system(size: AppTheme.FontSize.md, weight: AppTheme.FontWeight.regular))
+                .foregroundStyle(AppTheme.Text.primaryColor)
                 .padding(.horizontal, AppTheme.Spacing.xlXxl)
                 .padding(.bottom, AppTheme.Spacing.sm)
             projectGrid

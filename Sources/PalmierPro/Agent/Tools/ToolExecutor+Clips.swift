@@ -255,8 +255,6 @@ extension ToolExecutor {
             throw ToolError("Mixed trackIndex: \(omittedCount) of \(prepared.count) entries omitted trackIndex. Either set it on every entry or omit it on every entry (to auto-create shared tracks).")
         }
 
-        let settingsNote = applySettingsIfNeededForAgent(editor, assets: prepared.compactMap(\.asset).filter { $0.type != .sequence })
-
         var specs: [AddClipSpec] = []
         specs.reserveCapacity(prepared.count)
         for (idx, p) in prepared.enumerated() {
@@ -279,7 +277,12 @@ extension ToolExecutor {
 
         let snapshot = timelineSnapshot(editor)
         let actionName = specs.count == 1 ? "Add Clip (Agent)" : "Add Clips (Agent)"
+        var settingsNote: String?
         try withUndoGroup(editor, actionName: actionName) {
+            settingsNote = applySettingsIfNeededForAgent(
+                editor,
+                assets: prepared.compactMap(\.asset).filter { $0.type != .sequence }
+            )
             if omittedCount == specs.count {
                 let needsVideo = specs.contains { !$0.isAdjustment && $0.asset?.type != .audio } || anyAdjustment
                 let needsAudio = specs.contains { !$0.isAdjustment && $0.asset?.type == .audio }
@@ -396,7 +399,6 @@ extension ToolExecutor {
         guard input.atFrame >= 0 else { throw ToolError("atFrame must be >= 0 (got \(input.atFrame))") }
         let targetType = editor.timeline.tracks[input.trackIndex].type
 
-        // Apply settings before deriving durations: it may change FPS, which clipDurationFrames depends on.
         var resolvedAssets: [MediaAsset] = []
         resolvedAssets.reserveCapacity(input.entries.count)
         for (idx, entry) in input.entries.enumerated() {
@@ -406,8 +408,6 @@ extension ToolExecutor {
             }
             resolvedAssets.append(asset)
         }
-
-        let settingsNote = applySettingsIfNeededForAgent(editor, assets: resolvedAssets.filter { $0.type != .sequence })
 
         var specs: [EditorViewModel.RippleInsertSpec] = []
         specs.reserveCapacity(input.entries.count)
@@ -420,7 +420,14 @@ extension ToolExecutor {
         }
 
         let snapshot = timelineSnapshot(editor)
-        let ids = editor.rippleInsertClips(specs: specs, trackIndex: input.trackIndex, atFrame: input.atFrame)
+        var settingsNote: String?
+        let ids = try withUndoGroup(editor, actionName: specs.count == 1 ? "Insert Clip (Agent)" : "Insert Clips (Agent)") {
+            settingsNote = applySettingsIfNeededForAgent(
+                editor,
+                assets: resolvedAssets.filter { $0.type != .sequence }
+            )
+            return editor.rippleInsertClips(specs: specs, trackIndex: input.trackIndex, atFrame: input.atFrame)
+        }
         guard !ids.isEmpty else {
             throw ToolError("Insert failed on track \(input.trackIndex) at frame \(input.atFrame)")
         }
@@ -438,7 +445,9 @@ extension ToolExecutor {
         }
         let expanded = editor.expandToLinkGroup(Set(clipIds))
         let snapshot = timelineSnapshot(editor)
-        editor.removeClips(ids: expanded)
+        try withUndoGroup(editor, actionName: clipIds.count == 1 ? "Remove Clip (Agent)" : "Remove Clips (Agent)") {
+            editor.removeClips(ids: expanded)
+        }
         return mutationResult(editor, since: snapshot)
     }
 
@@ -514,7 +523,7 @@ extension ToolExecutor {
 
         let snapshot = timelineSnapshot(editor)
         let moveActionName = parsed.count == 1 ? "Move Clip (Agent)" : "Move Clips (Agent)"
-        withUndoGroup(editor, actionName: moveActionName) {
+        try withUndoGroup(editor, actionName: moveActionName) {
             if !moves.isEmpty { editor.moveClips(moves) }
         }
 
@@ -598,7 +607,7 @@ extension ToolExecutor {
 
         let snapshot = timelineSnapshot(editor)
         let setActionName = clipIds.count == 1 ? "Set Clip Property (Agent)" : "Set Clip Properties (Agent)"
-        withUndoGroup(editor, actionName: setActionName) {
+        try withUndoGroup(editor, actionName: setActionName) {
             for id in clipIds {
                 let changed = Self.applyPropertyChanges(
                     durationFrames: input.durationFrames,
@@ -782,7 +791,9 @@ extension ToolExecutor {
 
         guard !points.isEmpty else { throw ToolError("No valid split points") }
         let snapshot = timelineSnapshot(editor)
-        _ = editor.splitClips(at: points)
+        try withUndoGroup(editor, actionName: points.count == 1 ? "Split Clip (Agent)" : "Split Clips (Agent)") {
+            _ = editor.splitClips(at: points)
+        }
         return mutationResult(editor, since: snapshot)
     }
 
@@ -852,7 +863,10 @@ extension ToolExecutor {
 
         let ignoreSyncLocked = Set(input.ignoreSyncLockedTracks ?? [])
         let snapshot = timelineSnapshot(editor)
-        switch editor.rippleDeleteRangesOnTrack(trackIndex: resolvedTrackIndex, ranges: frameRanges, ignoreSyncLockTrackIndices: ignoreSyncLocked) {
+        let outcome = try withUndoGroup(editor, actionName: "Ripple Delete (Agent)") {
+            editor.rippleDeleteRangesOnTrack(trackIndex: resolvedTrackIndex, ranges: frameRanges, ignoreSyncLockTrackIndices: ignoreSyncLocked)
+        }
+        switch outcome {
         case .refused(let reason):
             throw ToolError(reason)
         case .ok(let report):
@@ -920,6 +934,7 @@ extension ToolExecutor {
     }
 
     private static func kfInt(_ raw: Any, at path: String) throws -> Int {
+        guard !isJSONBoolean(raw) else { throw ToolError("\(path): expected integer") }
         if let v = raw as? Int { return v }
         if let v = raw as? Double, let i = safeInt(v) { return i }
         if let v = raw as? NSNumber, let i = safeInt(v.doubleValue) { return i }
@@ -927,6 +942,7 @@ extension ToolExecutor {
     }
 
     private static func kfDouble(_ raw: Any, at path: String) throws -> Double {
+        guard !isJSONBoolean(raw) else { throw ToolError("\(path): expected number") }
         let v: Double
         if let d = raw as? Double { v = d }
         else if let i = raw as? Int { v = Double(i) }
@@ -949,7 +965,8 @@ extension ToolExecutor {
     // MARK: manage_tracks
 
     private static func exactTrackIndex(_ raw: Any?) -> Int? {
-        guard let value = (raw as? NSNumber)?.doubleValue, !(raw is Bool), value.rounded() == value else { return nil }
+        guard let raw, !isJSONBoolean(raw),
+              let value = (raw as? NSNumber)?.doubleValue, value.rounded() == value else { return nil }
         return Int(exactly: value)
     }
 
@@ -1056,7 +1073,7 @@ extension ToolExecutor {
             return ["trackId": track.id, "index": i, "label": editor.timelineTrackDisplayLabel(at: i), "type": track.type.rawValue]
         }
         var reorderResults: [(trackId: String, from: Int, to: Int)] = []
-        withUndoGroup(editor, actionName: "Manage Tracks (Agent)") {
+        try withUndoGroup(editor, actionName: "Manage Tracks (Agent)") {
             if !reorders.isEmpty {
                 let before = editor.timeline
                 for r in reorders {

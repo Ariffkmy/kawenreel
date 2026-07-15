@@ -20,18 +20,18 @@ extension EditorViewModel {
         case auto, upper, lower
 
         var label: String {
-            switch self {
-            case .auto: "Auto"
-            case .upper: "UPPERCASE"
-            case .lower: "lowercase"
-            }
+            self == .auto ? "Auto" : fontCase.label
         }
 
         func apply(_ s: String) -> String {
+            fontCase.apply(to: s)
+        }
+
+        private var fontCase: TextStyle.FontCase {
             switch self {
-            case .auto: s
-            case .upper: s.uppercased()
-            case .lower: s.lowercased()
+            case .auto: .mixed
+            case .upper: .uppercase
+            case .lower: .lowercase
             }
         }
     }
@@ -116,7 +116,10 @@ extension EditorViewModel {
     }
 
     @discardableResult
-    func generateCaptions(for request: CaptionRequest) async throws -> [String] {
+    func generateCaptions(
+        for request: CaptionRequest,
+        applying mutation: (@MainActor (@MainActor () -> [String]) async throws -> [String])? = nil
+    ) async throws -> [String] {
         let owningTimelineId = activeTimelineId
         var targets = resolvedCaptionTargets(for: request)
         guard !targets.isEmpty else { throw CaptionError.noSource }
@@ -132,6 +135,9 @@ extension EditorViewModel {
 
         let specs = captionSpecs(targets, results: results, request: request)
         guard !specs.isEmpty else { return [] }
+        if let mutation {
+            return try await mutation { self.placeCaptionTrack(specs) }
+        }
         return placeCaptionTrack(specs)
     }
 
