@@ -49,6 +49,7 @@ final class SupabaseService {
 
     func signIn(email: String, password: String) async throws {
         _ = try await client.auth.signIn(email: email, password: password)
+        await claimDevice()
     }
 
     /// True when a session was created immediately; false when Supabase requires
@@ -66,6 +67,18 @@ final class SupabaseService {
     /// exchanging the URL Supabase redirected to back into a session.
     func handleAuthCallback(_ url: URL) async throws {
         _ = try await client.auth.session(from: url)
+        await claimDevice()
+    }
+
+    /// Claims this device as the account's single active device (last sign-in
+    /// wins). Best-effort: a failure here just leaves the previous claim in
+    /// place, which only affects AI-usage gating, not sign-in itself.
+    private func claimDevice() async {
+        do {
+            try await client.rpc("claim_device", params: ["p_device_id": TokenUsageTracker.deviceId]).execute()
+        } catch {
+            Log.account.warning("device claim failed: \(error.localizedDescription)")
+        }
     }
 
     func resendConfirmation(email: String) async throws {

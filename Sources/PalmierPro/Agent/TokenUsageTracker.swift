@@ -31,7 +31,7 @@ final class TokenUsageTracker {
         .appendingPathComponent("PalmierPro/token-usage.json", isDirectory: false)
 
     /// Stable per-install id, used to attribute usage to a device in the dashboard.
-    static let deviceId: String = {
+    nonisolated static let deviceId: String = {
         let key = "kawenreelDeviceId"
         if let existing = UserDefaults.standard.string(forKey: key) { return existing }
         let id = UUID().uuidString

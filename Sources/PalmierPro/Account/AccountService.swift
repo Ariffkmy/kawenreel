@@ -121,6 +121,11 @@ final class AccountService {
     var remainingCredits: Int { max(0, (budgetCredits ?? 0) - spentCredits) }
     var hasCredits: Bool { remainingCredits > 0 }
 
+    /// nil means no device has claimed the account yet (e.g. pre-existing
+    /// session from before this feature shipped) — treated as allowed.
+    private(set) var activeDeviceId: String?
+    var isActiveDevice: Bool { activeDeviceId == nil || activeDeviceId == TokenUsageTracker.deviceId }
+
     private init() {}
 
     func configure() {
@@ -138,6 +143,7 @@ final class AccountService {
         guard isSignedIn else {
             account = nil
             availablePlans = []
+            activeDeviceId = nil
             return
         }
         isLoading = true
@@ -148,8 +154,11 @@ final class AccountService {
                 .from("billing_accounts").select().execute().value
             let planRows: [PlanRow] = try await client
                 .from("available_plans").select().execute().value
+            let deviceRows: [DeviceRow] = try await client
+                .from("user_devices").select().execute().value
 
             availablePlans = planRows.map(\.availablePlan)
+            activeDeviceId = deviceRows.first?.device_id
             let billing = billingRows.first
             let tier = billing.flatMap { AccountTier(rawValue: $0.tier) } ?? .none
             let user = AccountUser(
@@ -277,6 +286,10 @@ final class AccountService {
                 monthlyBudgetCredits: monthly_budget_credits
             )
         }
+    }
+
+    private struct DeviceRow: Decodable {
+        let device_id: String
     }
 
     private struct FeedbackInsert: Encodable {

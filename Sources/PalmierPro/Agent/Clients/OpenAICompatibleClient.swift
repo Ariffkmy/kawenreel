@@ -72,6 +72,7 @@ struct OpenAICompatibleConfig: Sendable {
     var temperature: Double?
     var referer: String?
     var appTitle: String?
+    var deviceId: String? = nil
 
     static let defaultModel = "anthropic/claude-sonnet-4.6"
     static let openRouterBaseURL = URL(string: "https://openrouter.ai/api/v1")!
@@ -89,7 +90,8 @@ struct OpenAICompatibleConfig: Sendable {
             enablePromptCache: true,
             temperature: OpenRouterModelCatalog.model(id: model)?.temperature,
             referer: nil,
-            appTitle: infoString("CFBundleName")
+            appTitle: infoString("CFBundleName"),
+            deviceId: TokenUsageTracker.deviceId
         )
     }
 
@@ -204,6 +206,7 @@ struct OpenAICompatibleClient: AgentClient {
         // OpenRouter ranking metadata; harmless on other gateways.
         if let referer = config.referer { request.setValue(referer, forHTTPHeaderField: "HTTP-Referer") }
         if let title = config.appTitle { request.setValue(title, forHTTPHeaderField: "X-Title") }
+        if let deviceId = config.deviceId { request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id") }
 
         let body = OpenAIRequestBuilder.body(
             model: config.model,

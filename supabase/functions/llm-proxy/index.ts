@@ -32,6 +32,11 @@ serve(async (req) => {
       return json({ error: "Subscribe or buy credits to keep using the AI assistant." }, 402);
     }
 
+    const deviceId = req.headers.get("X-Device-Id");
+    if (!(await isActiveDevice(userId, deviceId))) {
+      return json({ error: "Signed in on another device. Sign in again on this device to switch." }, 403);
+    }
+
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -129,6 +134,22 @@ async function hasRemainingCredits(userId: string): Promise<boolean> {
   const budget = monthlyBudget + (billing.purchased_credits ?? 0);
   const remaining = budget - (billing.spent_credits_this_period ?? 0);
   return remaining > 0;
+}
+
+// Mirrors AccountService.isActiveDevice: no claimed device (pre-feature
+// sessions) is allowed; otherwise the caller's device must match the claim.
+async function isActiveDevice(userId: string, deviceId: string | null): Promise<boolean> {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const base = Deno.env.get("SUPABASE_URL")!;
+  const res = await fetch(
+    `${base}/rest/v1/user_devices?user_id=eq.${userId}&select=device_id`,
+    { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
+  );
+  if (!res.ok) return false;
+  const rows = await res.json();
+  const activeDeviceId = rows[0]?.device_id;
+  if (!activeDeviceId) return true;
+  return activeDeviceId === deviceId;
 }
 
 // Atomically bumps today's request count via the increment_llm_usage SQL function

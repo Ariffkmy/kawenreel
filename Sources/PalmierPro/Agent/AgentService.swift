@@ -85,6 +85,7 @@ final class AgentService {
         case .defaultSetting:
             if hasOpenRouterKey { return true }
             return AccountService.shared.isSignedIn && AccountService.shared.hasCredits
+                && AccountService.shared.isActiveDevice
         }
     }
 
