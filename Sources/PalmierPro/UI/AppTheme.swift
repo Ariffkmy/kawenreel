@@ -141,12 +141,6 @@ enum AppTheme {
         endPoint: .bottom
     )
 
-    // MARK: - Glass
-
-    enum Glass {
-        static let primaryTint = Accent.primary.opacity(0.05)
-    }
-
     // MARK: - Status
 
     enum Status {
@@ -346,8 +340,6 @@ enum AppTheme {
 
     enum Caption {
         static let defaultFontSize: Double = 48
-        static let minFontSize: Double = 12
-        static let maxFontSize: Double = 300
         static let minPosition: Double = 0
         static let maxPosition: Double = 1
         static let centerSnapValue: CGFloat = 0.5

@@ -100,6 +100,27 @@ struct ToolExecutorSmokeTests {
 @Suite("ToolExecutor — import_media")
 @MainActor
 struct ToolExecutorImportMediaTests {
+    @Test func directoryImportAfterUserEditDoesNotBlock() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pp-import-directory-after-edit-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("fake-video".utf8).write(to: root.appendingPathComponent("reference.mov"))
+
+        let h = ToolHarness()
+        let undoManager = UndoManager()
+        h.editor.undo.attach(undoManager)
+        _ = h.editor.createFolder(name: "User Folder")
+
+        #expect(!(await h.runRaw("get_timeline")).isError)
+        #expect(!(await h.runRaw("get_media")).isError)
+        let result = await h.runRaw("import_media", args: ["source": ["path": root.path]])
+
+        #expect(!result.isError, "\(ToolHarness.textOf(result))")
+        #expect(undoManager.groupingLevel == 0)
+        #expect(h.editor.mediaAssets.count == 1)
+    }
+
     @Test func importBytesWritesFileAndRegistersAsset() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pp-import-media-\(UUID().uuidString)", isDirectory: true)
@@ -122,7 +143,26 @@ struct ToolExecutorImportMediaTests {
         #expect(h.editor.mediaManifest.entries.first?.name == "Imported Still")
     }
 
-    @Test func importPathCreatesPlaceholderAndCopiesIntoProject() async throws {
+    @Test func importBytesRejectsInvalidLottieBeforePackageCommit() async {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pp-import-lottie-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let h = ToolHarness()
+        let package = root.appendingPathComponent("Import.palmier", isDirectory: true)
+        h.editor.projectURL = package
+        let bytes = Data("not-lottie".utf8).base64EncodedString()
+
+        let result = await h.runRaw("import_media", args: [
+            "source": ["bytes": bytes, "mimeType": "application/json"],
+        ])
+
+        #expect(result.isError)
+        #expect(h.editor.mediaAssets.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: package.path))
+    }
+
+    @Test func importPathReferencesSourceFile() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pp-import-path-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -132,31 +172,33 @@ struct ToolExecutorImportMediaTests {
 
         let h = ToolHarness()
         h.editor.projectURL = root.appendingPathComponent("Import.palmier", isDirectory: true)
+        var checkpointCount = 0
+        h.editor.onProjectCheckpointRequired = { checkpointCount += 1 }
 
         let result = await h.runRaw("import_media", args: [
             "source": ["path": source.path],
-            "name": "Copied Still",
+            "name": "Linked Still",
         ])
 
         #expect(result.isError == false)
         let body = try JSONSerialization.jsonObject(with: Data(ToolHarness.textOf(result).utf8)) as? [String: Any]
-        #expect(body?["status"] as? String == "downloading")
+        #expect(body?["status"] as? String == "ready")
         #expect(body?["mediaRef"] is String)
         let asset = try #require(h.editor.mediaAssets.first)
-        #expect(asset.name == "Copied Still")
+        #expect(asset.name == "Linked Still")
         #expect(asset.type == .image)
-        #expect(asset.url.path.contains("/Import.palmier/media/imported-"))
-        #expect(h.editor.mediaManifest.entries.first?.importInput?.sourcePath == source.path)
-
-        try await waitForImportCompletion(in: h.editor, assetId: asset.id)
+        #expect(asset.url.standardizedFileURL == source.standardizedFileURL)
+        #expect(asset.sourceWidth == 2)
+        #expect(asset.sourceHeight == 2)
 
         #expect(asset.generationStatus == .none)
         #expect(asset.importInput == nil)
-        #expect(FileManager.default.fileExists(atPath: asset.url.path))
+        #expect(h.editor.mediaManifest.entries.first?.source == .external(absolutePath: source.path))
         #expect(h.editor.mediaManifest.entries.first?.importInput == nil)
+        #expect(checkpointCount == 1)
     }
 
-    @Test func importPathLeavesUnreadableMediaFailed() async throws {
+    @Test func importPathRejectsUnreadableMedia() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pp-import-invalid-path-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -172,13 +214,15 @@ struct ToolExecutorImportMediaTests {
             "name": "Unreadable Still",
         ])
 
-        #expect(result.isError == false)
+        #expect(result.isError)
+        #expect(ToolHarness.textOf(result).contains("Could not read media file"))
         let asset = try #require(h.editor.mediaAssets.first)
-        try await waitForImportFailure(in: h.editor, assetId: asset.id)
 
-        #expect(asset.generationStatus == .failed("Could not read media file."))
-        #expect(asset.importInput?.sourcePath == source.path)
-        #expect(h.editor.mediaManifest.entries.first?.importInput?.sourcePath == source.path)
+        #expect(asset.generationStatus == .none)
+        #expect(asset.url.standardizedFileURL == source.standardizedFileURL)
+        #expect(asset.importInput == nil)
+        #expect(h.editor.mediaManifest.entries.first?.source == .external(absolutePath: source.path))
+        #expect(h.editor.unprocessableMediaRefs.contains(asset.id))
     }
 
     @Test func unreadableFinalizeRefreshesTimelinePreview() async throws {
@@ -205,28 +249,6 @@ struct ToolExecutorImportMediaTests {
 
         #expect(finalized == false)
         #expect(editor.timelineRenderRevision == before + 1)
-    }
-
-    private func waitForImportCompletion(in editor: EditorViewModel, assetId: String) async throws {
-        for _ in 0..<100 {
-            if let status = editor.mediaAssets.first(where: { $0.id == assetId })?.generationStatus,
-               status == .none {
-                return
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        Issue.record("import did not complete")
-    }
-
-    private func waitForImportFailure(in editor: EditorViewModel, assetId: String) async throws {
-        for _ in 0..<100 {
-            if let status = editor.mediaAssets.first(where: { $0.id == assetId })?.generationStatus,
-               case .failed = status {
-                return
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        Issue.record("import did not fail")
     }
 
     private func writeTestPNG(to url: URL) throws {
@@ -898,6 +920,32 @@ struct ToolExecutorClipTests {
         ])
         #expect(result.isError)
         #expect(ToolHarness.textOf(result).contains("Mixed trackIndex"))
+    }
+
+    @Test func addClipsOmittingAudioTrackIndexAppendsBelowLinkedAudio() async throws {
+        let h = ToolHarness()
+        let video = h.addAsset(type: .video, hasAudio: true)
+        let music = h.addAsset(type: .audio)
+
+        let videoResult = await h.runRaw("add_clips", args: [
+            "entries": [["mediaRef": video.id, "startFrame": 0, "endFrame": 30]]
+        ])
+        #expect(videoResult.isError == false, "\(ToolHarness.textOf(videoResult))")
+
+        let musicResult = await h.runRaw("add_clips", args: [
+            "entries": [["mediaRef": music.id, "startFrame": 0, "endFrame": 30]]
+        ])
+        #expect(musicResult.isError == false, "\(ToolHarness.textOf(musicResult))")
+
+        let audioTracks = h.editor.timeline.tracks.enumerated().filter { $0.element.type == .audio }
+        #expect(audioTracks.count == 2)
+
+        let linkedTrack = audioTracks[0]
+        let musicTrack = audioTracks[1]
+        #expect(h.editor.timelineTrackDisplayLabel(at: linkedTrack.offset) == "A1")
+        #expect(h.editor.timelineTrackDisplayLabel(at: musicTrack.offset) == "A2")
+        #expect(linkedTrack.element.clips.contains { $0.linkGroupId != nil })
+        #expect(musicTrack.element.clips.contains { $0.mediaRef == music.id && $0.linkGroupId == nil })
     }
 
     // MARK: - remove_clips
@@ -1749,6 +1797,9 @@ struct ToolExecutorTextFolderTests {
                     "tracking": 5,
                     "lineSpacing": 12,
                     "fontCase": "uppercase",
+                    "underline": true,
+                    "strikethrough": true,
+                    "overline": true,
                     "outline": ["enabled": true, "width": 3],
                     "shadow": [
                         "opacity": 0.4,
@@ -1772,6 +1823,9 @@ struct ToolExecutorTextFolderTests {
         #expect(style?.tracking == 5)
         #expect(style?.lineSpacing == 12)
         #expect(style?.fontCase == .uppercase)
+        #expect(style?.isUnderlined == true)
+        #expect(style?.isStruckThrough == true)
+        #expect(style?.isOverlined == true)
         #expect(style?.border.enabled == true)
         #expect(style?.border.width == 3)
         #expect(style?.shadow.color.a == 0.4)

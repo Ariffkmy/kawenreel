@@ -435,10 +435,9 @@ struct InspectorView: View {
     }
 
     func commitToClips(_ clips: [Clip], actionName: String, _ commit: (Clip) -> Void) {
-        editor.undoManager?.beginUndoGrouping()
-        for c in clips { commit(c) }
-        editor.undoManager?.endUndoGrouping()
-        editor.undoManager?.setActionName(actionName)
+        editor.undo.perform(actionName) {
+            for c in clips { commit(c) }
+        }
     }
 
     func commitPropertiesToClips(
@@ -446,8 +445,7 @@ struct InspectorView: View {
         actionName: String,
         _ modify: (inout Clip) -> Void
     ) {
-        editor.commitClipProperties(clipIds: clips.map(\.id), modify)
-        editor.undoManager?.setActionName(actionName)
+        editor.commitClipProperties(clipIds: clips.map(\.id), actionName: actionName, modify)
     }
 
     // MARK: - Transform Section
@@ -645,10 +643,9 @@ struct InspectorView: View {
                 for c in clips { editor.applyScale(clipId: c.id, newScale: newVal) }
             }
         ) { newVal in
-            editor.undoManager?.beginUndoGrouping()
-            for c in clips { editor.commitScale(clipId: c.id, newScale: newVal) }
-            editor.undoManager?.endUndoGrouping()
-            editor.undoManager?.setActionName("Change Scale")
+            editor.undo.perform("Change Scale") {
+                for c in clips { editor.commitScale(clipId: c.id, newScale: newVal) }
+            }
         }
     }
 
@@ -665,10 +662,9 @@ struct InspectorView: View {
                 for c in clips { editor.applyRotation(clipId: c.id, valueDeg: newVal) }
             }
         ) { newVal in
-            editor.undoManager?.beginUndoGrouping()
-            for c in clips { editor.commitRotation(clipId: c.id, valueDeg: newVal) }
-            editor.undoManager?.endUndoGrouping()
-            editor.undoManager?.setActionName("Change Rotation")
+            editor.undo.perform("Change Rotation") {
+                for c in clips { editor.commitRotation(clipId: c.id, valueDeg: newVal) }
+            }
         }
     }
 
@@ -685,10 +681,9 @@ struct InspectorView: View {
                 for c in clips { editor.applyOpacity(clipId: c.id, value: newVal) }
             }
         ) { newVal in
-            editor.undoManager?.beginUndoGrouping()
-            for c in clips { editor.commitOpacity(clipId: c.id, value: newVal) }
-            editor.undoManager?.endUndoGrouping()
-            editor.undoManager?.setActionName("Change Opacity")
+            editor.undo.perform("Change Opacity") {
+                for c in clips { editor.commitOpacity(clipId: c.id, value: newVal) }
+            }
         }
     }
 
@@ -1022,25 +1017,6 @@ struct InspectorView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
-
-    private func metadataRow(_ icon: String, label: String, value: String) -> some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.mutedColor)
-                .frame(width: AppTheme.IconSize.xs)
-            Text(label)
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.tertiaryColor)
-            Spacer()
-            Text(value)
-                .font(.system(size: AppTheme.FontSize.xs))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
-                .lineLimit(2)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-
 
     // MARK: - Helpers
 

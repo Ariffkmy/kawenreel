@@ -244,10 +244,7 @@ final class GenerationService {
                ClipType(fileExtension: realExt) != nil {
                 asset.url = asset.url.deletingPathExtension().appendingPathExtension(realExt)
             }
-            let destinationURL = asset.url
-            try await Task.detached(priority: .utility) {
-                _ = try FileIO.moveReplacingDestination(from: tempURL, to: destinationURL)
-            }.value
+            asset.url = try await editor.commitStagedProjectMedia(tempURL, filename: asset.url.lastPathComponent)
 
             asset.pendingDownloadURL = nil
             editor.importMediaAsset(asset, skipAppend: true)
@@ -383,6 +380,7 @@ final class GenerationService {
         case "wav": return "audio/wav"
         case "m4a": return "audio/mp4"
         case "aiff", "aif", "aifc": return "audio/aiff"
+        case "caf": return "audio/x-caf"
         case "flac": return "audio/flac"
         default:
             switch fallback {
