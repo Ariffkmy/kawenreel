@@ -19,6 +19,7 @@ enum ToolName: String, CaseIterable, Sendable {
     case inspectMedia = "inspect_media"
     case searchMedia = "search_media"
     case importMedia = "import_media"
+    case captureFrame = "capture_frame"
     case organizeMedia = "organize_media"
 
     // Clips
@@ -262,6 +263,18 @@ enum ToolDefinitions {
                     "folder": ["type": "string", "description": "Optional destination folder path, e.g. 'B-roll/Sunset'. Created if missing. Omit for the project root."],
                 ],
                 required: ["source"]
+            )
+        ),
+        AgentTool(
+            name: .captureFrame,
+            description: "Capture one video frame as a full-resolution PNG media asset. Use timelineFrame to capture the active timeline's final composited image, including transforms, crop, color, effects, text, and captions. Use mediaRef with sourceSeconds to capture an unedited frame directly from a source video instead. Pass the asset's durationSeconds as sourceSeconds to capture its final decodable frame. Exactly one mode is allowed. The returned mediaRef is ready for add_clips, generate_video startFrameMediaRef/endFrameMediaRef, generate_image references, or inspect_media. Every call creates one new undoable media asset.",
+            inputSchema: objectSchema(
+                properties: [
+                    "timelineFrame": ["type": "integer", "description": "Project frame in the active timeline. Use this alone for the composited timeline image."],
+                    "mediaRef": ["type": "string", "description": "Video asset ID from get_media. Use with sourceSeconds for a raw source frame."],
+                    "sourceSeconds": ["type": "number", "description": "Source time in seconds for mediaRef. May equal durationSeconds to select the final decodable frame."],
+                    "name": ["type": "string", "description": "Optional media-library name for the captured PNG."],
+                ]
             )
         ),
         AgentTool(
@@ -603,7 +616,7 @@ enum ToolDefinitions {
                     "targetClipId": ["type": "string", "description": "Single clip to align. Use targetClipIds for several."],
                     "targetClipIds": ["type": "array", "items": ["type": "string"], "description": "Clips to align with the reference."],
                     "mode": ["type": "string", "enum": ["auto", "audio", "timecode"], "description": "auto (default): timecode when available, else audio. audio/timecode force that method."],
-                    "searchWindowSeconds": ["type": "number", "description": "Max ± offset to search in seconds, audio mode only (default 30)."],
+                    "searchWindowSeconds": ["type": "number", "description": "Optional max ± offset to search in seconds. Omit to search the full feasible overlap."],
                     "minConfidence": ["type": "number", "description": "Minimum audio correlation confidence 0–1 (default 0.5)."],
                 ],
                 required: ["referenceClipId"]
@@ -743,7 +756,7 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .addTexts,
-            description: "Adds text clips as timeline layers. Omit trackIndex on every entry to create one new top video track; otherwise set trackIndex on every entry. Transform is normalized text-box center/size; center-only auto-fits, all four fields override the box. Use the nested style object for typography, outline, shadow, and background. Use add_captions for spoken audio captions. Unknown fields are rejected.",
+            description: "Adds text clips as timeline layers. Omit trackIndex on every entry to create one new top video track; otherwise set trackIndex on every entry. Transform is normalized text-box center/size; center-only auto-fits, all four fields override the box. Use the nested style object for typography, outline, shadow, and background. fillMode 'footage' stencils layers below through the letter shapes. Use add_captions for spoken audio captions. Unknown fields are rejected.",
             inputSchema: objectSchema(
                 properties: [
                     "entries": [
@@ -764,6 +777,7 @@ enum ToolDefinitions {
                             ], textStyleProperties(detailed: false), [
                                 "animation": ["type": "string", "enum": TextAnimation.Preset.agentValues, "description": "Animation preset; off clears."],
                                 "highlightColor": ["type": "string", "description": "Active-word hex."],
+                                "fillMode": ["type": "string", "enum": ["color", "footage"], "description": "color = solid typography (default). footage = stencil layers below through the letter shapes."],
                             ]),
                             "required": ["startFrame", "endFrame", "content"],
                         ],
@@ -774,7 +788,7 @@ enum ToolDefinitions {
         ),
         AgentTool(
             name: .updateText,
-            description: "Updates text clips or a captionGroupId. The nested style object is a partial patch: omitted values stay unchanged. Use it for typography, color, outline, shadow, and background. Content and layout-affecting style changes auto-fit the box unless transform is passed. Unknown fields are rejected.",
+            description: "Updates text clips or a captionGroupId. The nested style object is a partial patch: omitted values stay unchanged. Use it for typography, color, outline, shadow, and background. fillMode 'footage' stencils layers below through the glyphs. Content and layout-affecting style changes auto-fit the box unless transform is passed. Unknown fields are rejected.",
             inputSchema: objectSchema(
                 properties: mergedProperties([
                     "clipIds": [
@@ -792,6 +806,7 @@ enum ToolDefinitions {
                 ], textStyleProperties(detailed: true), [
                     "animation": ["type": "string", "enum": TextAnimation.Preset.agentValues, "description": "Animation preset; off clears."],
                     "highlightColor": ["type": "string", "description": "Active-word hex."],
+                    "fillMode": ["type": "string", "enum": ["color", "footage"], "description": "color = solid typography. footage = stencil layers below through the letter shapes."],
                 ]),
                 required: []
             )
