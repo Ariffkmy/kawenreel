@@ -10,6 +10,10 @@ struct TextTab: View {
     private var clipIds: [String] { clips.map(\.id) }
     private var isBatch: Bool { clips.count > 1 }
 
+    private var isFootageFill: Bool {
+        sharedClipValue(clips) { $0.textFillMode ?? .color } == .footage
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.zero) {
             contentField
@@ -19,10 +23,38 @@ struct TextTab: View {
                     fallback: Self.defaults
                 ),
                 defaults: Self.defaults,
+                showsSolidFillControls: !isFootageFill,
                 actions: styleActions,
-                afterAlignment: { positionSection },
+                afterAlignment: {
+                    positionSection
+                    rotationSection
+                    fillModeRow
+                },
                 afterColor: { opacitySlider }
             )
+        }
+    }
+
+    private var fillModeRow: some View {
+        let current = sharedClipValue(clips) { $0.textFillMode ?? .color }
+        return InspectorRow(
+            label: "Fill",
+            onReset: {
+                editor.commitClipProperties(clipIds: clipIds) { $0.textFillMode = nil }
+            }
+        ) {
+            Menu {
+                ForEach(TextFillMode.allCases, id: \.self) { mode in
+                    Button(mode.displayName) {
+                        editor.commitClipProperties(clipIds: clipIds) {
+                            $0.textFillMode = mode == .footage ? .footage : nil
+                        }
+                    }
+                }
+            } label: {
+                EditorMenuValue(text: current?.displayName ?? "—")
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().focusable(false)
         }
     }
 
@@ -33,14 +65,12 @@ struct TextTab: View {
                     get: { clip.textContent ?? "" },
                     set: { new in
                         guard !isBatch else { return }
-                        editor.applyClipProperty(clipId: clip.id, rebuild: true) { $0.textContent = new }
-                        editor.fitTextClipToContent(clipId: clip.id)
+                        editor.applyTextContent(clipId: clip.id, content: new)
                     }
                 ),
                 onCommit: { new in
                     guard !isBatch else { return }
-                    editor.commitClipProperty(clipId: clip.id) { $0.textContent = new }
-                    editor.fitTextClipToContent(clipId: clip.id)
+                    editor.commitTextContent(clipId: clip.id, content: new)
                 }
             )
             .disabled(isBatch)
@@ -90,6 +120,20 @@ struct TextTab: View {
             }
         ) {
             InspectorPositionFields(clips: clips)
+        }
+    }
+
+    private var rotationSection: some View {
+        InspectorRow(
+            label: "Rotation",
+            onReset: {
+                editor.commitClipProperties(clipIds: clipIds, actionName: "Reset Rotation") {
+                    $0.transform.rotation = Transform().rotation
+                    $0.rotationTrack = nil
+                }
+            }
+        ) {
+            InspectorRotationField(clips: clips)
         }
     }
 

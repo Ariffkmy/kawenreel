@@ -164,6 +164,8 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     var opacity: Double = 1.0
     var transform: Transform = Transform()
     var crop: Crop = Crop()
+    var edgeRounding: Double = 0
+    var edgeSoftness: Double = 0
     var linkGroupId: String?
     var captionGroupId: String?
     var multicamGroupId: String?
@@ -173,6 +175,7 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     var textStyle: TextStyle?
     var textAnimation: TextAnimation?
     var wordTimings: [WordTiming]?
+    var textFillMode: TextFillMode?
 
     // Keyframe tracks for each animatable property. Nil when no animation exists.
     var opacityTrack: KeyframeTrack<Double>?
@@ -192,8 +195,9 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
         case id, mediaRef, mediaType, sourceClipType, startFrame, durationFrames
         case trimStartFrame, trimEndFrame, speed, volume
         case fadeInFrames, fadeOutFrames, fadeInInterpolation, fadeOutInterpolation
-        case opacity, transform, crop
+        case opacity, transform, crop, edgeRounding, edgeSoftness
         case linkGroupId, captionGroupId, multicamGroupId, textContent, textStyle, textAnimation, wordTimings
+        case textFillMode
         case opacityTrack, positionTrack, scaleTrack, rotationTrack, cropTrack, volumeTrack
         case effects, blendMode
     }
@@ -249,7 +253,11 @@ struct Clip: Codable, Sendable, Equatable, Identifiable {
     func transformAt(frame: Int) -> Transform {
         let tl = topLeftAt(frame: frame)
         let sz = sizeAt(frame: frame)
-        var t = Transform(topLeft: (tl.x, tl.y), width: sz.width, height: sz.height)
+        var t = transform
+        t.centerX = tl.x + sz.width / 2
+        t.centerY = tl.y + sz.height / 2
+        t.width = sz.width
+        t.height = sz.height
         t.rotation = rotationAt(frame: frame)
         return t
     }
@@ -446,6 +454,10 @@ extension Clip {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        func normalizedValue(forKey key: CodingKeys) -> Double {
+            let value = (try? c.decode(Double.self, forKey: key)) ?? 0
+            return (0...1).contains(value) ? value : 0
+        }
         self.init(
             id: (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString,
             mediaRef: try c.decode(String.self, forKey: .mediaRef),
@@ -464,6 +476,8 @@ extension Clip {
             opacity: (try? c.decode(Double.self, forKey: .opacity)) ?? 1.0,
             transform: (try? c.decode(Transform.self, forKey: .transform)) ?? Transform(),
             crop: (try? c.decode(Crop.self, forKey: .crop)) ?? Crop(),
+            edgeRounding: normalizedValue(forKey: .edgeRounding),
+            edgeSoftness: normalizedValue(forKey: .edgeSoftness),
             linkGroupId: try? c.decode(String.self, forKey: .linkGroupId),
             captionGroupId: try? c.decode(String.self, forKey: .captionGroupId),
             multicamGroupId: try? c.decode(String.self, forKey: .multicamGroupId),
@@ -471,6 +485,7 @@ extension Clip {
             textStyle: try? c.decode(TextStyle.self, forKey: .textStyle),
             textAnimation: try? c.decode(TextAnimation.self, forKey: .textAnimation),
             wordTimings: try? c.decode([WordTiming].self, forKey: .wordTimings),
+            textFillMode: try? c.decode(TextFillMode.self, forKey: .textFillMode),
             opacityTrack: try? c.decode(KeyframeTrack<Double>.self, forKey: .opacityTrack),
             positionTrack: try? c.decode(KeyframeTrack<AnimPair>.self, forKey: .positionTrack),
             scaleTrack: try? c.decode(KeyframeTrack<AnimPair>.self, forKey: .scaleTrack),

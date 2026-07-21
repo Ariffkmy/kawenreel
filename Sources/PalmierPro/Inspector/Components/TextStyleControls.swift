@@ -27,6 +27,7 @@ struct TextStyleControls<AfterAlignment: View, AfterColor: View>: View {
     let selection: TextStyleSelection
     let defaults: TextStyle
     let styleExpanded: Binding<Bool>?
+    let showsSolidFillControls: Bool
     let actions: TextStyleEditingActions
     @ViewBuilder let afterAlignment: () -> AfterAlignment
     @ViewBuilder let afterColor: () -> AfterColor
@@ -40,6 +41,7 @@ struct TextStyleControls<AfterAlignment: View, AfterColor: View>: View {
         defaults: TextStyle,
         styleExpanded: Binding<Bool>? = nil,
         groupsExpandedByDefault: Bool = true,
+        showsSolidFillControls: Bool = true,
         actions: TextStyleEditingActions,
         @ViewBuilder afterAlignment: @escaping () -> AfterAlignment,
         @ViewBuilder afterColor: @escaping () -> AfterColor
@@ -47,6 +49,7 @@ struct TextStyleControls<AfterAlignment: View, AfterColor: View>: View {
         self.selection = selection
         self.defaults = defaults
         self.styleExpanded = styleExpanded
+        self.showsSolidFillControls = showsSolidFillControls
         self.actions = actions
         self.afterAlignment = afterAlignment
         self.afterColor = afterColor
@@ -69,6 +72,24 @@ struct TextStyleControls<AfterAlignment: View, AfterColor: View>: View {
                     keyPath: \.fontSize
                 )
                 numberRow(
+                    label: "Width",
+                    range: TextStyle.axisScaleRange,
+                    displayMultiplier: 100,
+                    format: "%.0f",
+                    suffix: "%",
+                    fitToContent: true,
+                    keyPath: \.widthScale
+                )
+                numberRow(
+                    label: "Height",
+                    range: TextStyle.axisScaleRange,
+                    displayMultiplier: 100,
+                    format: "%.0f",
+                    suffix: "%",
+                    fitToContent: true,
+                    keyPath: \.heightScale
+                )
+                numberRow(
                     label: "Tracking",
                     range: -20...100,
                     format: "%.1f",
@@ -87,16 +108,20 @@ struct TextStyleControls<AfterAlignment: View, AfterColor: View>: View {
                 fontCaseRow
                 alignmentRow
                 afterAlignment()
-                colorRow(
-                    label: "Color",
-                    debounceKey: "textColor",
-                    keyPath: \.color
-                )
+                if showsSolidFillControls {
+                    colorRow(
+                        label: "Color",
+                        debounceKey: "textColor",
+                        keyPath: \.color
+                    )
+                }
                 afterColor()
             }
-            outlineGroup
-            shadowGroup
-            backgroundGroup
+            if showsSolidFillControls {
+                outlineGroup
+                shadowGroup
+                backgroundGroup
+            }
         }
     }
 
