@@ -620,7 +620,7 @@ extension ToolExecutor {
 
             // Map gap values to apply_color parameters (inverse = correction)
             // Use existing apply_color mechanism via mutateClips
-            try withUndoGroup(editor, actionName: "Color Match (Ref)") {
+            try editor.undo.perform("Color Match (Ref)") {
                 editor.mutateClips(ids: [clipId], actionName: "Color Match") { clip in
                     var state = GradeState(effects: clip.effects)
 

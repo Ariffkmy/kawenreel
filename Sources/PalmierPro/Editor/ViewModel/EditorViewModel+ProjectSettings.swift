@@ -122,8 +122,7 @@ extension EditorViewModel {
         let prev = timeline.letterboxRatio
         guard prev != ratio else { return }
         timeline.letterboxRatio = ratio
-        undoManager?.registerUndo(withTarget: self) { vm in vm.applyLetterboxRatio(prev) }
-        undoManager?.setActionName(ratio == nil ? "Remove Letterbox" : "Apply Letterbox")
+        registerTimelineUndo(ratio == nil ? "Remove Letterbox" : "Apply Letterbox") { vm in vm.applyLetterboxRatio(prev) }
         notifyTimelineChanged()
     }
 

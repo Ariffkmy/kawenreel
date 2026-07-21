@@ -168,7 +168,7 @@ final class MediaAsset: Identifiable {
             defer { releaseThumbnailPermit() }
             guard thumbnail == nil, !Task.isCancelled else { return }
             _ = await loadMetadata()
-        case .audio, .text, .sequence:
+        case .audio, .text, .sequence, .adjustment:
             break
         }
     }

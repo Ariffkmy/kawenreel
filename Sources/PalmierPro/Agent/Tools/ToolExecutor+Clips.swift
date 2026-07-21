@@ -345,7 +345,7 @@ extension ToolExecutor {
                         .map { ($0.startFrame, $0.startFrame + $0.durationFrames) }
                     audioTrackId = freeTrackId(.audio, spans)
                     if audioTrackId == nil {
-                        audioTrackId = editor.timeline.tracks[editor.insertTrack(at: 0, type: .audio)].id
+                        audioTrackId = editor.timeline.tracks[editor.insertTrack(at: editor.timeline.tracks.count, type: .audio)].id
                     }
                 }
                 for i in specs.indices {
