@@ -746,7 +746,7 @@ extension EditorViewModel {
         }
     }
 
-    struct TextClipSpec {
+    struct TextClipSpec: Sendable {
         let trackIndex: Int
         let startFrame: Int
         let durationFrames: Int
@@ -769,51 +769,72 @@ extension EditorViewModel {
         let canvasW = Double(timeline.width)
         let canvasH = Double(timeline.height)
         var createdIds = [String?](repeating: nil, count: specs.count)
+        var batchTimeline = clearExistingRegions ? nil : timeline
 
-        let indicesByTrack = Dictionary(grouping: specs.indices, by: { specs[$0].trackIndex })
-        for (_, indices) in indicesByTrack {
-            let ordered = indices.sorted { specs[$0].startFrame < specs[$1].startFrame }
-            for i in ordered {
-                let spec = specs[i]
-                guard timeline.tracks.indices.contains(spec.trackIndex) else { continue }
-                let start = max(0, spec.startFrame)
-                let duration = max(1, spec.durationFrames)
-                if clearExistingRegions {
-                    clearRegion(trackIndex: spec.trackIndex, start: start, end: start + duration, prune: false)
+        let orderedIndices: [Int]
+        if clearExistingRegions {
+            orderedIndices = Dictionary(grouping: specs.indices, by: { specs[$0].trackIndex })
+                .values.flatMap { indices in
+                    indices.sorted { specs[$0].startFrame < specs[$1].startFrame }
                 }
-
-                let resolved: Transform
-                if let t = spec.transform {
-                    resolved = t
-                } else {
-                    let natural = TextLayout.naturalSize(
-                        content: spec.content, style: spec.style, maxWidth: CGFloat(canvasW) * 0.9, canvasHeight: CGFloat(canvasH)
-                    )
-                    let w = Double(natural.width) / canvasW
-                    let h = Double(natural.height) / canvasH
-                    resolved = Transform(topLeft: ((1 - w) / 2, (1 - h) / 2), width: w, height: h)
-                }
-                var clip = Clip(
-                    mediaRef: "",
-                    mediaType: .text,
-                    sourceClipType: .text,
-                    startFrame: start,
-                    durationFrames: duration,
-                    transform: resolved
-                )
-                clip.textContent = spec.content
-                clip.textStyle = spec.style
-                clip.captionGroupId = spec.captionGroupId
-                clip.wordTimings = spec.words
-                clip.textAnimation = spec.animation
-                clip.textFillMode = spec.fillMode == .footage ? .footage : nil
-                timeline.tracks[spec.trackIndex].clips.append(clip)
-                createdIds[i] = clip.id
-            }
+        } else {
+            orderedIndices = Array(specs.indices)
         }
 
-        for i in Set(specs.map(\.trackIndex)) where timeline.tracks.indices.contains(i) {
-            sortClips(trackIndex: i)
+        for i in orderedIndices {
+            let spec = specs[i]
+            let trackExists = batchTimeline?.tracks.indices.contains(spec.trackIndex)
+                ?? timeline.tracks.indices.contains(spec.trackIndex)
+            guard trackExists else { continue }
+            let start = max(0, spec.startFrame)
+            let duration = max(1, spec.durationFrames)
+            if clearExistingRegions {
+                clearRegion(trackIndex: spec.trackIndex, start: start, end: start + duration, prune: false)
+            }
+
+            let resolved: Transform
+            if let t = spec.transform {
+                resolved = t
+            } else {
+                let natural = TextLayout.naturalSize(
+                    content: spec.content, style: spec.style, maxWidth: CGFloat(canvasW) * 0.9, canvasHeight: CGFloat(canvasH)
+                )
+                let w = Double(natural.width) / canvasW
+                let h = Double(natural.height) / canvasH
+                resolved = Transform(topLeft: ((1 - w) / 2, (1 - h) / 2), width: w, height: h)
+            }
+            var clip = Clip(
+                mediaRef: "",
+                mediaType: .text,
+                sourceClipType: .text,
+                startFrame: start,
+                durationFrames: duration,
+                transform: resolved
+            )
+            clip.textContent = spec.content
+            clip.textStyle = spec.style
+            clip.captionGroupId = spec.captionGroupId
+            clip.wordTimings = spec.words
+            clip.textAnimation = spec.animation
+            clip.textFillMode = spec.fillMode == .footage ? .footage : nil
+            if batchTimeline != nil {
+                batchTimeline!.tracks[spec.trackIndex].clips.append(clip)
+            } else {
+                timeline.tracks[spec.trackIndex].clips.append(clip)
+            }
+            createdIds[i] = clip.id
+        }
+
+        if var updatedTimeline = batchTimeline {
+            guard createdIds.contains(where: { $0 != nil }) else { return [] }
+            for i in Set(specs.map(\.trackIndex)) where updatedTimeline.tracks.indices.contains(i) {
+                updatedTimeline.tracks[i].clips.sort { $0.startFrame < $1.startFrame }
+            }
+            timeline = updatedTimeline
+        } else {
+            for i in Set(specs.map(\.trackIndex)) where timeline.tracks.indices.contains(i) {
+                sortClips(trackIndex: i)
+            }
         }
         if refreshVisuals {
             videoEngine?.refreshVisuals()
@@ -823,43 +844,32 @@ extension EditorViewModel {
 
     @discardableResult
     func addTextClip(content: String = "Text", style: TextStyle = TextStyle()) -> String? {
-        undo.perform("Add Text") {
-            let durationFrames = max(1, secondsToFrame(seconds: Defaults.textDurationSeconds, fps: timeline.fps))
+        let durationFrames = max(1, secondsToFrame(seconds: Defaults.textDurationSeconds, fps: timeline.fps))
+        let canvasW = Double(timeline.width)
+        let canvasH = Double(timeline.height)
+        let natural = TextLayout.naturalSize(content: content, style: style, maxWidth: CGFloat(canvasW) * 0.9, canvasHeight: CGFloat(canvasH))
+        let w = Double(natural.width) / canvasW
+        let h = Double(natural.height) / canvasH
+        let transform = Transform(topLeft: ((1 - w) / 2, (1 - h) / 2), width: w, height: h)
 
-            // Index 0 is the topmost slot in the timeline UI.
+        var clip = Clip(
+            mediaRef: "",
+            mediaType: .text,
+            sourceClipType: .text,
+            startFrame: max(0, currentFrame),
+            durationFrames: durationFrames,
+            transform: transform
+        )
+        clip.textContent = content
+        clip.textStyle = style
+        let clipId = clip.id
+
+        withTimelineSwap(actionName: "Add Text") {
             let trackIdx = insertTrack(at: 0, type: .video)
-
-            let canvasW = Double(timeline.width)
-            let canvasH = Double(timeline.height)
-            let natural = TextLayout.naturalSize(content: content, style: style, maxWidth: CGFloat(canvasW) * 0.9, canvasHeight: CGFloat(canvasH))
-            let w = Double(natural.width) / canvasW
-            let h = Double(natural.height) / canvasH
-            let transform = Transform(topLeft: ((1 - w) / 2, (1 - h) / 2), width: w, height: h)
-
-            var clip = Clip(
-                mediaRef: "",
-                mediaType: .text,
-                sourceClipType: .text,
-                startFrame: max(0, currentFrame),
-                durationFrames: durationFrames,
-                transform: transform
-            )
-            clip.textContent = content
-            clip.textStyle = style
-            let clipId = clip.id
-
             timeline.tracks[trackIdx].clips.append(clip)
             sortClips(trackIndex: trackIdx)
-
-            undo.register("Add Text", withTarget: self) { vm in
-                if let loc = vm.findClip(id: clipId) {
-                    vm.timeline.tracks[loc.trackIndex].clips.remove(at: loc.clipIndex)
-                    vm.videoEngine?.refreshVisuals()
-                }
-            }
-            selectedClipIds = [clipId]
-            videoEngine?.refreshVisuals()
-            return clipId
         }
+        selectedClipIds = [clipId]
+        return clipId
     }
 }

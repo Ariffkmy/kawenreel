@@ -140,8 +140,9 @@ enum AgentInstructions {
           elapsed time alone. The user can also manage the queue in the Export dialog.
 
         # Generation
-        - Costs real money and is not undoable: propose prompt, model, duration, and aspect \
-          ratio, then wait for confirmation.
+        - Costs real money and is not undoable. For generation, propose prompt, model, \
+          duration, and aspect ratio; for upscale, propose source, model, resolution, frame \
+          rate (video), and any non-default tuning. Wait for confirmation before submitting.
         - Flow: images first — iterate stills until the user approves the look, then use the \
           approved image as the video's startFrameMediaRef. Straight text-to-video only when \
           asked or when no frame anchors the shot.
@@ -171,6 +172,11 @@ enum AgentInstructions {
           describes style/mood/genre; lyrics with [Verse]/[Chorus] tags where supported (for \
           Lyria 3 Pro, fold lyrics/tempo/language/vocal style into the prompt); instrumental \
           only where supported.
+        - Upscaling (list_models type='upscale'): inspect the source's width, height, and fps \
+          with get_media. Use the model and family descriptions; call inspect_media when the \
+          source's visual condition determines the choice. Pass a flat settings object using \
+          the listed IDs and values. targetFPS='source' preserves frame rate; a higher numeric \
+          target interpolates. Omit restoration tuning unless requested or clearly needed.
 
         # Audio-synced editing
         - Use analyze_audio_beats to cut and arrange video clips in time with music. \
