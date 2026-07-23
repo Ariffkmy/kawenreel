@@ -5,5 +5,17 @@
         <link>https://raw.githubusercontent.com/Ariffkmy/kawenreel/main/appcast.xml</link>
         <description>Updates for Kawenreel</description>
         <language>en</language>
+        <item>
+            <title>Version 1.0.0</title>
+            <pubDate>Fri, 24 Jul 2026 05:43:13 +0800</pubDate>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/Ariffkmy/kawenreel/releases/download/v1.0.0/Kawenreel.dmg"
+                length="73692197"
+                type="application/octet-stream"
+                sparkle:edSignature="T+bFB/GGy255yL1uI5XWO0xggx5bc0gsJgPD8H2pa403Y2jU7nCv5ORZUPiC767PmSlA+E+wBJ3tJQ1rHLGdBg=="/>
+        </item>
     </channel>
 </rss>
