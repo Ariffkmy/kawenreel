@@ -55,8 +55,8 @@ if [ -z "$SIGNING_IDENTITY" ]; then
 fi
 RESOURCES="$ROOT/Sources/PalmierPro/Resources"
 APP="$ROOT/.build/PalmierPro.app"
-ZIP="$ROOT/.build/PalmierPro.zip"
-DMG="$ROOT/.build/PalmierPro.dmg"
+ZIP="$ROOT/.build/Kawenreel.zip"
+DMG="$ROOT/.build/Kawenreel.dmg"
 
 echo "==> Building ($CONFIG)"
 TRAITS="BundledSpeech"
