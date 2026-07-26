@@ -1,5 +1,11 @@
 import SwiftUI
 
+struct VideoModelProviderGroup: Identifiable {
+    let name: String
+    let models: [(index: Int, model: VideoModelConfig)]
+    var id: String { name }
+}
+
 // Model catalog selection and per-model capability state.
 extension GenerationView {
 
@@ -47,6 +53,16 @@ extension GenerationView {
         videoModels.enumerated()
             .filter { ModelPreferences.shared.isEnabled($0.element.id) && isAvailable($0.element.paidOnly) }
             .map { (index: $0.offset, model: $0.element) }
+    }
+    var enabledVideoModelsByProvider: [VideoModelProviderGroup] {
+        var names: [String] = []
+        var modelsByName: [String: [(index: Int, model: VideoModelConfig)]] = [:]
+        for item in enabledVideoModels {
+            let name = item.model.providerName ?? "Other"
+            if modelsByName[name] == nil { names.append(name) }
+            modelsByName[name, default: []].append(item)
+        }
+        return names.map { VideoModelProviderGroup(name: $0, models: modelsByName[$0] ?? []) }
     }
     var enabledImageModels: [(index: Int, model: ImageModelConfig)] {
         imageModels.enumerated()
@@ -132,6 +148,7 @@ extension GenerationView {
         case .image: return !imageModel.aspectRatios.isEmpty || imageModel.resolutions != nil || imageModel.qualities != nil || imageModel.maxImages > 1
         case .audio:
             return audioModel.supportsInstrumental
+                || audioModel.supportsMultilingual
                 || (!audioUsesSource && audioModel.hasDurationControl)
         case .upscale:
             return true
@@ -200,6 +217,7 @@ extension GenerationView {
         case .video: "Describe the video"
         case .audio:
             switch audioModel.category {
+            case .general: "Describe the audio scene\(audioPromptHint)"
             case .tts: "Text to speak\(audioPromptHint)"
             case .music: "Describe the music style or mood\(audioPromptHint)"
             case .sfx: "Describe the sound\(audioPromptHint)"

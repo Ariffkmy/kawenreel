@@ -38,6 +38,7 @@ final class GenerationService {
         buildParams: @escaping ([String]) -> BackendGenerationParams,
         snapshotRefs: (@Sendable (inout GenerationInput, [String]) -> Void)? = nil,
         preprocessRef: (@Sendable (Int, MediaAsset) async throws -> URL?)? = nil,
+        preprocessSourceVideo: (@Sendable (URL) async throws -> URL?)? = nil,
         fileExtension: String,
         projectURL: URL?,
         editor: EditorViewModel,
@@ -76,7 +77,8 @@ final class GenerationService {
                     references: references,
                     trimmedSourceOverride: trimmedSourceOverride,
                     preUploadedURLs: preUploadedURLs,
-                    preprocessRef: preprocessRef
+                    preprocessRef: preprocessRef,
+                    preprocessSourceVideo: preprocessSourceVideo
                 )
                 defer { Self.cleanupTempFiles(prepared.tempFiles) }
                 let uploaded = prepared.uploaded
@@ -125,7 +127,8 @@ final class GenerationService {
         references: [MediaAsset],
         trimmedSourceOverride: TrimmedSource?,
         preUploadedURLs: [String]?,
-        preprocessRef: (@Sendable (Int, MediaAsset) async throws -> URL?)?
+        preprocessRef: (@Sendable (Int, MediaAsset) async throws -> URL?)?,
+        preprocessSourceVideo: (@Sendable (URL) async throws -> URL?)?
     ) async throws -> PreparedReferences {
         if let preUploadedURLs, !preUploadedURLs.isEmpty {
             return PreparedReferences(uploaded: preUploadedURLs, tempFiles: [])
@@ -141,6 +144,11 @@ final class GenerationService {
                 urlsToUpload[0] = extracted
                 tempFiles.append(extracted)
             }
+            if let preprocessSourceVideo, let sourceURL = urlsToUpload.first,
+               let processed = try await preprocessSourceVideo(sourceURL) {
+                urlsToUpload[0] = processed
+                tempFiles.append(processed)
+            }
             if let preprocessRef, !references.isEmpty {
                 let rewrites = try await preprocessedReferenceURLs(references: references, preprocessRef: preprocessRef)
                 for (i, rewritten) in rewrites {
@@ -155,7 +163,7 @@ final class GenerationService {
                 cacheKeys: uploadCacheKeys(
                     references: references,
                     trimmedFirstReference: trimmedSourceOverride?.hasTrim == true,
-                    hasPreprocess: preprocessRef != nil
+                    hasPreprocess: preprocessRef != nil || preprocessSourceVideo != nil
                 ),
             )
             return PreparedReferences(uploaded: uploaded, tempFiles: tempFiles)
