@@ -86,9 +86,10 @@ double click cannot pay twice and a reversed commission can never become paid.
 "Clearing" means the commission is still inside the refund window. Nothing stops
 you paying early — the flag only tells you the money could still be refunded.
 
-Setting this up requires running `supabase/admin_affiliates.sql` from the
-landing-page repo once in the Supabase SQL Editor (same as the other
-`admin_*.sql` files); it adds the admin-only policies and reporting views.
+The admin-only policies and reporting views ship with the schema, in
+`20260727180000_affiliate_admin_views.sql`, so `supabase db push` installs them.
+That migration is guarded on `public.is_admin()` and `public.profiles` — objects
+the landing-page project owns — and skips with a notice where they are absent.
 
 The console reads bank numbers through `api/admin-affiliate-bank.js` and settles
 through `api/admin-affiliate-mark-paid.js`. Both run with the service-role key
