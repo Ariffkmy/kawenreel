@@ -2,6 +2,20 @@
   "changelogURL": "https://github.com/Ariffkmy/kawenreel/releases",
   "entries": [
     {
+      "version": "1.1.0",
+      "date": "2026-07-27",
+      "sections": [
+        {
+          "heading": "New",
+          "items": [
+            "Affiliate program: share your referral link from Settings → Affiliate and earn 10% of each referral's first subscription payment",
+            "Payout details: add your bank name, account number, and account holder name in Settings → Affiliate to receive your earnings",
+            "Referral codes: apply a code in Settings → Affiliate before you subscribe to credit whoever referred you"
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.6.14",
       "date": "2026-07-21",
       "sections": [
