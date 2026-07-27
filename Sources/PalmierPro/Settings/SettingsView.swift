@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case account
+    case affiliate
     case general
     case models
     case agent
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .account: return "Account"
+        case .affiliate: return "Affiliate"
         case .general: return "General"
         case .models: return "Models"
         case .agent: return "Agent"
@@ -26,6 +28,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .account: return "person.circle"
+        case .affiliate: return "gift"
         case .general: return "gearshape"
         case .models: return "square.stack.3d.up"
         case .agent: return "paperplane"
@@ -45,8 +48,9 @@ struct SettingsView: View {
     }
 
     private var visibleTabs: [SettingsTab] {
+        // Both panes are backed by Supabase; neither can function without it.
         SettingsTab.allCases.filter { tab in
-            !(tab == .account && account.isMisconfigured)
+            !((tab == .account || tab == .affiliate) && account.isMisconfigured)
         }
     }
 
@@ -133,6 +137,8 @@ private struct SettingsDetail: View {
                             switch tab {
                             case .account:
                                 AccountPane()
+                            case .affiliate:
+                                AffiliatePane()
                             case .general:
                                 SettingsSection(title: "Notifications") {
                                     NotificationsPane()

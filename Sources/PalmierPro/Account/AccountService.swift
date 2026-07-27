@@ -71,12 +71,7 @@ struct AvailablePlan: Decodable, Sendable, Identifiable {
     var originalPriceLabel: String { Self.priceLabel(cents: monthlyPriceCents, currency: currency) }
 
     static func priceLabel(cents: Int, currency: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency.uppercased()
-        if cents % 100 == 0 { formatter.maximumFractionDigits = 0 }
-        return formatter.string(from: NSNumber(value: Double(cents) / 100))
-            ?? "\(currency.uppercased()) \(Double(cents) / 100)"
+        MoneyFormat.label(cents: cents, currency: currency)
     }
 }
 
