@@ -95,8 +95,11 @@ final class SupabaseService {
 
     // MARK: - Usage reporting
 
-    /// Remote usage/prompt capture is paused; local caches remain the record.
-    private static let remoteReportingEnabled = false
+    /// Remote prompt capture (agent_prompt). Re-enabled now that the landing-page
+    /// project has a storage-guard (supabase/functions/storage-guard) that exports
+    /// and prunes this table automatically once the free-tier database approaches
+    /// its size cap, so growth no longer risks filling the project unattended.
+    private static let remoteReportingEnabled = true
 
     private struct UsageInsert: Encodable {
         let user_id: String

@@ -429,6 +429,15 @@ final class AgentService {
         ))
         streamError = nil
 
+        SupabaseService.shared.reportPrompt(
+            trimmed,
+            sessionId: currentSessionId?.uuidString,
+            mentionCount: referencedMentions.count,
+            providerMode: providerMode.rawValue,
+            deviceId: TokenUsageTracker.deviceId,
+            appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        )
+
         kickOffStream()
     }
 
