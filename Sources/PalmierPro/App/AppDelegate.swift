@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "kawenreel" {
+            // Referral links are not auth callbacks; route them before the
+            // session exchange, which would reject them.
+            if ReferralAttribution.capture(from: url) { continue }
             Task { @MainActor in
                 do {
                     try await SupabaseService.shared.handleAuthCallback(url)

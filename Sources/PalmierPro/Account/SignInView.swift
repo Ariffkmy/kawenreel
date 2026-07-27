@@ -245,6 +245,10 @@ enum AuthCoordinator {
         if signedIn {
             SignInWindowController.shared.close()
         }
-        Task { await AccountService.shared.refreshAccount() }
+        Task {
+            await AccountService.shared.refreshAccount()
+            // A referral captured before sign-in can only be attached now.
+            if signedIn { await ReferralAttribution.claimPendingCode() }
+        }
     }
 }

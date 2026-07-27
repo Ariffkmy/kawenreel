@@ -58,6 +58,22 @@ serve(async (req) => {
         if (invoice.billing_reason === "subscription_cycle") {
           const userId = await userIdForCustomer(customerIdOf(invoice.customer));
           if (userId) await patchAccount(userId, { spent_credits_this_period: 0 });
+        } else if (invoice.billing_reason === "subscription_create") {
+          await awardAffiliateCommission(invoice);
+        }
+        break;
+      }
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        await reverseAffiliateCommission(invoiceIdOf(charge.invoice), "refund");
+        break;
+      }
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id;
+        if (chargeId) {
+          const charge = await stripe.charges.retrieve(chargeId);
+          await reverseAffiliateCommission(invoiceIdOf(charge.invoice), "chargeback");
         }
         break;
       }
@@ -74,6 +90,55 @@ serve(async (req) => {
 function customerIdOf(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null): string | null {
   if (typeof customer === "string") return customer;
   return customer?.id ?? null;
+}
+
+function invoiceIdOf(invoice: string | Stripe.Invoice | null | undefined): string | null {
+  if (typeof invoice === "string") return invoice;
+  return invoice?.id ?? null;
+}
+
+// Affiliate commission is earned on the referred user's first subscription
+// invoice only. The RPC is idempotent on the invoice id, so Stripe retries and
+// redelivered events cannot pay twice.
+async function awardAffiliateCommission(invoice: Stripe.Invoice) {
+  const userId = await userIdForCustomer(customerIdOf(invoice.customer));
+  if (!userId || !invoice.id) return;
+  const amount = invoice.amount_paid ?? 0;
+  if (amount <= 0) return;
+
+  const outcome = await callRpc("record_affiliate_commission", {
+    p_referred_user_id: userId,
+    p_stripe_invoice_id: invoice.id,
+    p_amount_cents: amount,
+    p_currency: invoice.currency ?? "myr",
+  });
+  console.log(`affiliate commission ${outcome} for invoice ${invoice.id}`);
+}
+
+// Any refund or chargeback on a commissioned invoice reverses the whole
+// commission while it is still pending; once paid out it is absorbed.
+async function reverseAffiliateCommission(invoiceId: string | null, reason: string) {
+  if (!invoiceId) return;
+  const outcome = await callRpc("reverse_affiliate_commission", {
+    p_stripe_invoice_id: invoiceId,
+    p_reason: reason,
+  });
+  if (outcome === "absorbed") {
+    console.warn(`affiliate commission already paid out, absorbing ${reason} on ${invoiceId}`);
+  } else {
+    console.log(`affiliate commission ${outcome} for invoice ${invoiceId} (${reason})`);
+  }
+}
+
+async function callRpc(name: string, params: Record<string, unknown>): Promise<string | null> {
+  const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`${name} failed: ${await res.text()}`);
+  const text = (await res.text()).trim();
+  return text.replace(/^"|"$/g, "") || null;
 }
 
 async function syncSubscription(sub: Stripe.Subscription) {
