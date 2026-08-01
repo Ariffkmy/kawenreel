@@ -67,7 +67,11 @@ final class EditorViewModel {
     var denoiseBaked: Set<String> = []
     var speechAnalyzingCount: Int = 0
     var speakerRegistry: [SpeakerRegistryEntry] = []
-    var multicamGroups: [MulticamSource] = []
+    var multicamGroups: [MulticamSource] = [] {
+        didSet {
+            if multicamGroups != oldValue { deadAirMaskCache.reset() }
+        }
+    }
     var speakerAssignments: [String: [String: Int]] = [:]
     var speakerIdentifyPhase: String?
     var speakerIdentifyInFlight: Bool { speakerIdentifyPhase != nil }
@@ -174,6 +178,7 @@ final class EditorViewModel {
     var missingMediaRefs: Set<String> = []
     @ObservationIgnored var missingMediaRefreshTask: Task<Void, Never>?
     let mediaVisualCache = MediaVisualCache()
+    let deadAirMaskCache = DeadAirMaskCache()
     let searchIndex = SearchIndexCoordinator()
     var projectURL: URL? {
         didSet {
@@ -317,6 +322,9 @@ final class EditorViewModel {
         }
         mediaVisualCache.speech.onAnalyzingCountChange = { [weak self] count in
             self?.speechAnalyzingCount = count
+        }
+        mediaVisualCache.onDeadAirCacheInvalidated = { [weak self] in
+            self?.deadAirMaskCache.reset()
         }
 
         // Re-check media presence when the app regains focus: a user may have
