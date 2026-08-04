@@ -1,27 +1,5 @@
 import Foundation
 
-enum LayoutPreset: String, CaseIterable {
-    case `default`
-    case media
-    case vertical
-
-    var label: String {
-        switch self {
-        case .default: "Default"
-        case .media: "Media"
-        case .vertical: "Vertical"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .default: "rectangle.split.3x1"
-        case .media: "sidebar.left"
-        case .vertical: "sidebar.right"
-        }
-    }
-}
-
 enum Layout {
     // Media panel
     static let mediaPanelDefault: CGFloat = 500
@@ -44,7 +22,8 @@ enum Layout {
 
     // Timeline
     static let timelineMinHeight: CGFloat = 100
-    static let trackHeight: CGFloat = 50
+    static let timelineDefaultHeightFraction: CGFloat = 0.35
+    static let trackHeight: CGFloat = TrackSize.defaultHeight
     static let rulerHeight: CGFloat = 24
     static let trackHeaderWidth: CGFloat = 100
     static let dropZoneHeight: CGFloat = 60
@@ -72,6 +51,7 @@ enum Snap {
 }
 
 enum TrackSize {
+    static let defaultHeight: CGFloat = 44
     static let minHeight: CGFloat = 32
     static let maxHeight: CGFloat = 200
     static let resizeHandleZone: CGFloat = 6
@@ -104,7 +84,7 @@ enum Trim {
 enum Project {
     static let fileExtension = "palmier"
     static let registryFilename = "project-registry.json"
-    static let typeIdentifier = "com.kawenreel.project"
+    static let typeIdentifier = "io.palmier.project"
     static let defaultProjectName = "Untitled Project"
     static let timelineFilename = "project.json"
     static let manifestFilename = "media.json"
@@ -113,7 +93,7 @@ enum Project {
 
     static var storageDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/Kawenreel", isDirectory: true)
+            .appendingPathComponent("Documents/Palmier Pro", isDirectory: true)
     }
 
     nonisolated static func ensureStorageDirectory() {
