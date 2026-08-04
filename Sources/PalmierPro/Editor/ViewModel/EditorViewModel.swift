@@ -60,8 +60,6 @@ final class EditorViewModel {
         }
     }
     var mediaManifest = MediaManifest()
-    var generationLog = GenerationLog()
-
     // MARK: - Denoise bake state (session-scoped, keyed by mediaRef)
 
     var denoiseInFlight: Set<String> = []
@@ -247,6 +245,12 @@ final class EditorViewModel {
         }
     }
 
+    var silenceRemovalSettings = SilenceRemovalSettings.default {
+        didSet {
+            mediaVisualCache.timelineView?.needsDisplay = true
+        }
+    }
+
     var markBeats: Bool = {
         UserDefaults.standard.object(forKey: "markBeats") as? Bool ?? true
     }() {
@@ -357,7 +361,6 @@ final class EditorViewModel {
             "mediaByType": mediaCounts,
             "offlineMedia": offlineMediaRefs.count,
             "unprocessableMedia": unprocessableMediaRefs.count,
-            "generationLogEntries": generationLog.entries.count,
             "agentSessions": agentService.sessions.count
         ]
     }

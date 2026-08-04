@@ -11,6 +11,13 @@ enum GenerationBackend {
         nil
     }
 
+    static func subscribeToProjectActivity(
+        projectId: String
+    ) -> AnyPublisher<[BackendProjectActivityEntry], Error>? {
+        // Inert until the Kawenreel backend ships a project activity endpoint.
+        nil
+    }
+
     static func uploadReference(
         fileURL: URL,
         contentType: String,
@@ -70,6 +77,28 @@ enum GenerationBackendError: LocalizedError {
         case .transport(let s): return s
         case .api(_, _, let message): return message
         }
+    }
+}
+
+struct BackendProjectActivityEntry: Decodable, Sendable, Identifiable {
+    enum Kind: String, Decodable, Sendable {
+        case generation
+        case failed
+        case refund
+    }
+
+    let id: String
+    let kind: Kind
+    let model: String
+    let credits: Int
+    let createdAt: Double
+
+    var creditImpact: Int {
+        kind == .refund ? -credits : credits
+    }
+
+    var createdDate: Date {
+        Date(timeIntervalSince1970: createdAt / 1_000)
     }
 }
 

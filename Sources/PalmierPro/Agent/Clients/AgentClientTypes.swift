@@ -74,6 +74,27 @@ struct AgentTokenUsage: Sendable, Equatable {
     var isEmpty: Bool { totalTokens == 0 }
 }
 
+struct AgentRequestContext: Equatable, Sendable {
+    let conversationID: UUID
+    let traceID: UUID
+    let spanID: UUID
+    let inputMessageID: UUID
+    let outputMessageID: UUID
+    let projectID: String?
+
+    func apply(to request: inout URLRequest, telemetryEnabled: Bool) {
+        request.setValue(conversationID.uuidString.lowercased(), forHTTPHeaderField: "X-Palmier-Conversation-Id")
+        request.setValue(traceID.uuidString.lowercased(), forHTTPHeaderField: "X-Palmier-Trace-Id")
+        request.setValue(spanID.uuidString.lowercased(), forHTTPHeaderField: "X-Palmier-Span-Id")
+        request.setValue(inputMessageID.uuidString.lowercased(), forHTTPHeaderField: "X-Palmier-Input-Message-Id")
+        request.setValue(outputMessageID.uuidString.lowercased(), forHTTPHeaderField: "X-Palmier-Output-Message-Id")
+        if let projectID, !projectID.isEmpty {
+            request.setValue(projectID, forHTTPHeaderField: "X-Palmier-Project-Id")
+        }
+        request.setValue(telemetryEnabled ? "1" : "0", forHTTPHeaderField: "X-Palmier-Agent-Telemetry")
+    }
+}
+
 enum AnthropicStreamEvent: Sendable {
     case textDelta(String)
     case toolUseComplete(id: String, name: String, inputJSON: String)
@@ -101,7 +122,8 @@ protocol AgentClient: Sendable {
     func stream(
         system: String,
         tools: [AnthropicToolSchema],
-        messages: [AnthropicMessage]
+        messages: [AnthropicMessage],
+        context: AgentRequestContext
     ) -> AsyncThrowingStream<AnthropicStreamEvent, Error>
 }
 

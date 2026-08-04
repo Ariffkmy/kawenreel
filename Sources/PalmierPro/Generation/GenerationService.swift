@@ -257,9 +257,6 @@ final class GenerationService {
             asset.pendingDownloadURL = nil
             editor.importMediaAsset(asset, skipAppend: true)
             let finalized = await editor.finalizeImportedAsset(asset)
-            if finalized {
-                editor.appendGenerationLog(for: asset)
-            }
             return finalized
         } catch {
             let message = error.localizedDescription

@@ -88,10 +88,7 @@ struct ExportView: View {
             .background(AppTheme.Background.raisedColor)
         }
         .frame(width: AppTheme.Export.sheetWidthWithLog, height: AppTheme.Export.sheetHeight)
-        .presentationBackground {
-            AppTheme.Background.surfaceColor.opacity(AppTheme.Opacity.prominent)
-                .background(.ultraThinMaterial)
-        }
+        .appSheetBackground()
         .task {
             selectedTimelineId = editor.activeTimelineId
             let entries = editor.mediaManifest.entries
@@ -684,7 +681,6 @@ struct ExportView: View {
                 try exportQueue.enqueuePalmierProject(
                     projectFile: editor.projectFileSnapshot(),
                     manifest: editor.mediaManifest,
-                    generationLog: editor.generationLog,
                     sourceProjectURL: editor.projectURL,
                     outputURL: url,
                     source: .manual,
