@@ -301,6 +301,7 @@ extension EditorViewModel {
             for await outcome in group { collected.append(outcome) }
             return collected
         }
+        try Task.checkCancellation()
 
         var results: [String: TranscriptionResult] = [:]
         var firstError: Error?
