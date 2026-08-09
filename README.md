@@ -4,7 +4,7 @@
 
 **The video editor built for AI.**
 
-<a href="https://github.com/Ariffkmy/kawenreel/releases/latest/download/PalmierPro.dmg">
+<a href="https://github.com/Ariffkmy/kawenreel/releases/latest/download/Kawenreel.dmg">
   <img src="./assets/macos-badge.png" alt="Download Kawenreel for macOS" width="180" />
 </a>
 
