@@ -1133,14 +1133,9 @@ final class TimelineView: NSView {
 
         // Media
         var mediaItems: [NSMenuItem] = []
-<<<<<<< HEAD
-        if clip.mediaType != .text, clip.sourceClipType != .sequence, singleLinkGroup {
-            let swapItem = NSMenuItem(title: "Swap Media", action: #selector(performSwapMedia(_:)), keyEquivalent: "")
-=======
         if clip.mediaType != .text, clip.sourceClipType != .sequence,
            clip.multicamGroupId == nil, singleLinkGroup {
-            let swapItem = NSMenuItem(title: L10n.string("Swap Media"), action: #selector(performSwapMedia(_:)), keyEquivalent: "")
->>>>>>> 9a378dfa ([agent] Add clip media source swapping (#500))
+            let swapItem = NSMenuItem(title: "Swap Media", action: #selector(performSwapMedia(_:)), keyEquivalent: "")
             swapItem.target = self
             swapItem.representedObject = clip.id
             mediaItems.append(swapItem)
