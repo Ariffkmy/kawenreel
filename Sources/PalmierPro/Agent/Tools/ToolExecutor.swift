@@ -47,6 +47,7 @@ final class ToolExecutor {
     func bindProject(_ project: VideoProject?) {
         guard frontmostProjectProvider != nil else { return }
         boundProject = project
+        lastTranscriptSession = nil
     }
 
     func setMCPClientInfo(_ clientInfo: MCPClientInfo) {
@@ -54,7 +55,7 @@ final class ToolExecutor {
     }
 
     var feedbackState = FeedbackState()
-    var lastTranscriptContext: TranscriptionToolContext?
+    var lastTranscriptSession: TranscriptSession?
 
     // Gemini-family models mangle tool names with a namespace prefix
     // ("default_api.get_timeline", "default_api_get_timeline"); resolve by suffix.
@@ -247,9 +248,11 @@ final class ToolExecutor {
         case .addClips:         return try addClips(editor, args)
         case .insertClips:      return try insertClips(editor, args)
         case .removeClips:      return try removeClips(editor, args)
+        case .manageClipLinks:  return try manageClipLinks(editor, args)
         case .manageTracks:     return try manageTracks(editor, args)
         case .moveClips:        return try moveClips(editor, args)
         case .applyLayout:      return try applyLayout(editor, args)
+        case .swapClipMedia:    return try swapClipMedia(editor, args)
         case .setClipProperties: return try setClipProperties(editor, args)
         case .setKeyframes:     return try setKeyframes(editor, args)
         case .splitClips:       return try splitClips(editor, args)
@@ -441,6 +444,15 @@ func isJSONBoolean(_ value: Any) -> Bool {
 
 // Untrusted Double→Int: nil on NaN/Inf/overflow instead of trapping.
 func safeInt(_ d: Double) -> Int? { Int(exactly: d.rounded(.towardZero)) }
+
+/// Strict JSON integer parsing for identifiers and indexes. Unlike `Dictionary.int`,
+/// this rejects fractional numbers and numeric strings.
+func exactJSONInt(_ raw: Any?) -> Int? {
+    guard let raw, !isJSONBoolean(raw) else { return nil }
+    if let value = raw as? Int { return value }
+    guard let value = (raw as? NSNumber)?.doubleValue else { return nil }
+    return Int(exactly: value)
+}
 
 // Clamp before converting so the Int(...) can't overflow.
 func clampInt(_ d: Double, min lo: Int, max hi: Int) -> Int {
