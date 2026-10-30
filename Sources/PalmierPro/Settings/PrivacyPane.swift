@@ -12,7 +12,7 @@ struct PrivacyPane: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
             SettingsToggleRow(
                 title: "Share usage data",
-                subtitle: "Send usage data from your interactions with Palmier Pro to help improve the app.",
+                subtitle: "Send usage data from your interactions with Kawenreel to help improve the app.",
                 isOn: $analyticsEnabled
             )
             .onChange(of: analyticsEnabled) { _, newValue in

@@ -847,7 +847,7 @@ enum ClipRenderer {
 
         NSAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: AppTheme.FontSize.xs, weight: .medium),
-            .foregroundColor: clip.sourceClipType.themeForegroundColor,
+            .foregroundColor: AppTheme.Text.primary,
         ]).draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
     }
 
