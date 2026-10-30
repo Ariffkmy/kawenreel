@@ -127,7 +127,7 @@ struct AIEditTab: View {
               let cost = CostEstimator.cost(for: gen) else {
             return nil
         }
-        return CostEstimator.localizedDescription(cost)
+        return CostEstimator.format(cost)
     }
 
     // MARK: - Replace toggle
